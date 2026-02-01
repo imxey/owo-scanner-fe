@@ -111,7 +111,42 @@ export default function Home() {
 
     fetchProfiles();
   }, []);
+  const handleSave = async (index: number) => {
+    const item = scanResults[index];
 
+    // Cek apakah data sudah diverifikasi lewat api/is-approved
+    if (item.matchStatus !== "matched" || !item.selectedApproval) {
+      alert("⚠️ Verifikasi data BAPP dulu ya sebelum simpan!");
+      return;
+    }
+
+    try {
+      const payload = {
+        doc_name: item.docName || `Dokumen #${index + 1}`,
+        npsn: item.selectedApproval.npsn,
+        sn_bapp: item.selectedApproval.sn_bapp,
+        hasil_cek: item.selectedApproval.hasil_cek,
+        image_front: item.back, // Base64 Front
+        image_back: item.front, // Base64 Back
+      };
+
+      const res = await fetch(`${import.meta.env.VITE_SAVE_API_URL}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        alert("✅ " + result.message);
+      } else {
+        alert("❌ Gagal: " + result.message);
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("⚠️ Error: Pastikan aplikasi Bridge sudah jalan!");
+    }
+  };
   const handleScan = async () => {
     setLoading(true);
     setStatus({ type: "idle", msg: "⏳ Menghubungkan ke Scanner..." });
@@ -751,7 +786,14 @@ export default function Home() {
                           </svg>
                         </button>
                         <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
-                        <button className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition-all active:scale-95 shadow-lg shadow-indigo-200 dark:shadow-none">
+                        <button
+                          onClick={() => handleSave(index)} // <--- TAMBAHIN INI
+                          className={`flex items-center gap-2 px-5 py-2 text-white rounded-xl text-sm font-bold transition-all active:scale-95 shadow-lg ${
+                            pair.matchStatus === "matched"
+                              ? "bg-indigo-600 hover:bg-indigo-700"
+                              : "bg-gray-400 opacity-50 cursor-not-allowed"
+                          }`}
+                        >
                           <span>Simpan</span>
                         </button>
                       </div>
