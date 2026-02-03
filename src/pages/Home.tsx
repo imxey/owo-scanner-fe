@@ -2,12 +2,16 @@
 
 import { useState, useEffect } from "react";
 import Tesseract from "tesseract.js";
+import Swal from "sweetalert2";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 // --- Interface Data ---
 interface ApprovalData {
   hasil_cek: string;
   npsn: string;
   sn_bapp: string;
+  nama_sekolah?: string;
+  kode?: string;
 }
 
 interface ScanPair {
@@ -19,14 +23,15 @@ interface ScanPair {
   ocrStatus?: "idle" | "processing" | "success" | "error";
   // New properties for approval status
   matchStatus?:
-    | "idle"
-    | "loading"
-    | "matched"
-    | "not-matched"
-    | "ambiguous"
-    | "error";
+  | "idle"
+  | "loading"
+  | "matched"
+  | "not-matched"
+  | "ambiguous"
+  | "error";
   approvalData?: ApprovalData[]; // Stores the list of potential matches
   selectedApproval?: ApprovalData; // Stores the user-selected or auto-selected match
+  isSaved?: boolean;
 }
 
 interface ScanResponse {
@@ -76,6 +81,40 @@ export default function Home() {
     }
   }, []);
 
+  // Keyboard Navigation for Preview Modal
+  useEffect(() => {
+    if (!previewImage) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewImage(null);
+        return;
+      }
+
+      // Find current image context
+      const currentPair = scanResults.find(
+        (p) => p.front === previewImage || p.back === previewImage
+      );
+
+      if (!currentPair) return;
+
+      const isFront = currentPair.front === previewImage;
+
+      // Navigate Left / A (Back -> Front)
+      if ((e.key === "ArrowLeft" || e.key.toLowerCase() === "a") && !isFront) {
+        setPreviewImage(currentPair.front);
+      }
+
+      // Navigate Right / D (Front -> Back)
+      if ((e.key === "ArrowRight" || e.key.toLowerCase() === "d") && isFront && currentPair.back) {
+        setPreviewImage(currentPair.back);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewImage, scanResults]);
+
   const toggleTheme = () => {
     const newTheme = theme === "light" ? "dark" : "light";
     setTheme(newTheme);
@@ -116,9 +155,23 @@ export default function Home() {
   const handleSave = async (index: number) => {
     const item = scanResults[index];
 
-    // Cek apakah data sudah diverifikasi lewat api/is-approved
+    // Cek apakah data sudah diverifikasi
     if (item.matchStatus !== "matched" || !item.selectedApproval) {
-      alert("⚠️ Verifikasi data BAPP dulu ya sebelum simpan!");
+      Swal.fire({
+        icon: "warning",
+        title: "Belum Diverifikasi",
+        text: "Silakan verifikasi data BAPP terlebih dahulu!",
+      });
+      return;
+    }
+
+    // VALIDASI: Cek apakah status SESUAI
+    if (item.selectedApproval.hasil_cek !== "sesuai") {
+      Swal.fire({
+        icon: "error",
+        title: "Data Tidak Sesuai",
+        text: "Dokumen tidak dapat disimpan karena status verifikasi TIDAK SESUAI.",
+      });
       return;
     }
 
@@ -130,6 +183,7 @@ export default function Home() {
         hasil_cek: item.selectedApproval.hasil_cek,
         image_front: item.back, // Base64 Front
         image_back: item.front, // Base64 Back
+        nama_sekolah: item.selectedApproval.nama_sekolah,
       };
 
       const res = await fetch(
@@ -143,13 +197,32 @@ export default function Home() {
 
       const result = await res.json();
       if (result.success) {
-        alert("✅ " + result.message);
+        // Mark as saved
+        const updated = [...scanResults];
+        updated[index].isSaved = true;
+        setScanResults(updated);
+
+        Swal.fire({
+          icon: "success",
+          title: "Berhasil",
+          text: result.message,
+          timer: 2000,
+          showConfirmButton: false,
+        });
       } else {
-        alert("❌ Gagal: " + result.message);
+        Swal.fire({
+          icon: "error",
+          title: "Gagal Menyimpan",
+          text: result.message,
+        });
       }
     } catch (error) {
       console.error("Save error:", error);
-      alert("⚠️ Error: Pastikan aplikasi Bridge sudah jalan!");
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: "Gagal menghubungi server. Pastikan aplikasi Bridge sudah jalan!",
+      });
     }
   };
   const handleScan = async () => {
@@ -233,17 +306,19 @@ export default function Home() {
   };
 
   const checkApproval = async (
-    noBapp: string,
+    identifier: string,
+    isNpsn: boolean = false,
   ): Promise<{
     status: ScanPair["matchStatus"];
     data: ApprovalData[];
     selected?: ApprovalData;
   }> => {
-    if (!noBapp) return { status: "idle", data: [] };
+    if (!identifier) return { status: "idle", data: [] };
 
     try {
+      const param = isNpsn ? `npsn=${encodeURIComponent(identifier)}` : `no_bapp=${encodeURIComponent(identifier)}`;
       const res = await fetch(
-        `${import.meta.env.VITE_APPROVAL_API_URL}/api/is-approved?no_bapp=${encodeURIComponent(noBapp)}`,
+        `${import.meta.env.VITE_APPROVAL_API_URL}/is-approved?${param}`,
       );
       if (!res.ok) throw new Error("API Check Failed");
 
@@ -392,15 +467,18 @@ export default function Home() {
     setScanResults(updated);
   };
 
-  const handleManualCheck = async (index: number) => {
+  const handleManualCheck = async (index: number, npsnInput?: string) => {
     const item = scanResults[index];
-    if (!item.docName) return;
+    if (!item.docName && !npsnInput) return;
 
     const updated = [...scanResults];
     updated[index].matchStatus = "loading";
     setScanResults(updated);
 
-    const checkDetails = await checkApproval(item.docName);
+    // Use NPSN input if provided, otherwise fallback to existing logic (docName as no_bapp)
+    const checkDetails = npsnInput
+      ? await checkApproval(npsnInput, true)
+      : await checkApproval(item.docName!);
     updated[index].matchStatus = checkDetails.status;
     updated[index].approvalData = checkDetails.data;
     updated[index].selectedApproval = checkDetails.selected;
@@ -418,13 +496,69 @@ export default function Home() {
     setScanResults(updated);
   };
 
+  const handleDelete = (index: number) => {
+    Swal.fire({
+      title: "Hapus Dokumen?",
+      text: "Data hasil scan ini akan dihapus dari daftar.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Ya, Hapus",
+      cancelButtonText: "Batal",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        const updated = [...scanResults];
+        updated.splice(index, 1);
+        setScanResults(updated);
+        Swal.fire({
+          title: "Terhapus!",
+          text: "Dokumen telah dihapus.",
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false
+        });
+
+        // If no items left, go back to start?
+        if (updated.length === 0) {
+          setViewMode("start");
+        }
+      }
+    });
+  };
+
+  const handleClearAll = () => {
+    Swal.fire({
+      title: "Hapus Semua Hasil?",
+      text: "Semua data hasil scan akan dihapus dan tidak dapat dikembalikan.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Ya, Hapus Semua",
+      cancelButtonText: "Batal",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        setScanResults([]);
+        setViewMode("start");
+        setStatus({ type: "idle", msg: "" });
+        Swal.fire({
+          title: "Bersih!",
+          text: "Semua hasil scan telah dihapus.",
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false
+        });
+      }
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex items-center justify-center p-4">
       {/* Main Card Container with Dynamic Width */}
       <div
-        className={`transition-all duration-500 ease-in-out ${
-          viewMode === "start" ? "w-full max-w-xl" : "w-full max-w-[95%]"
-        } bg-white dark:bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-slate-800`}
+        className={`transition-all duration-500 ease-in-out ${viewMode === "start" ? "w-full max-w-xl" : "w-full max-w-[95%]"
+          } bg-white dark:bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-slate-800`}
       >
         {/* Header */}
         <div className="bg-slate-800 p-6 text-white flex justify-between items-center">
@@ -564,13 +698,12 @@ export default function Home() {
               {/* Status Indicator */}
               {status.msg && (
                 <div
-                  className={`p-4 rounded-lg text-sm font-medium border ${
-                    status.type === "error"
-                      ? "bg-red-50 text-red-700 border-red-200"
-                      : status.type === "success"
-                        ? "bg-green-50 text-green-700 border-green-200"
-                        : "bg-blue-50 text-blue-700 border-blue-200"
-                  }`}
+                  className={`p-4 rounded-lg text-sm font-medium border ${status.type === "error"
+                    ? "bg-red-50 text-red-700 border-red-200"
+                    : status.type === "success"
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : "bg-blue-50 text-blue-700 border-blue-200"
+                    }`}
                 >
                   {status.msg}
                 </div>
@@ -580,11 +713,10 @@ export default function Home() {
               <button
                 onClick={handleScan}
                 disabled={loading}
-                className={`w-full py-4 px-6 rounded-lg font-bold text-white shadow-md transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 ${
-                  loading
-                    ? "bg-gray-400 cursor-not-allowed opacity-75"
-                    : "bg-blue-600 hover:bg-blue-700"
-                }`}
+                className={`w-full py-4 px-6 rounded-lg font-bold text-white shadow-md transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 ${loading
+                  ? "bg-gray-400 cursor-not-allowed opacity-75"
+                  : "bg-blue-600 hover:bg-blue-700"
+                  }`}
               >
                 {loading ? (
                   <>
@@ -652,6 +784,15 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  <button
+                    onClick={handleClearAll}
+                    className="px-4 py-2 bg-red-100/50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-bold border border-red-200 transition-colors flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    Hapus Semua
+                  </button>
                   {status.type === "processing" && (
                     <span className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full border border-blue-200 animate-pulse">
                       <svg
@@ -722,46 +863,49 @@ export default function Home() {
               </div>
 
               {/* Results List */}
-              <div className="space-y-6">
+              {/* Results List */}
+              <div className="space-y-8">
                 {scanResults.map((pair, index) => (
                   <div
                     key={index}
-                    className={`p-5 rounded-2xl border-2 transition-all duration-300 shadow-sm mb-6 ${
-                      pair.matchStatus === "matched"
+                    className={`relative p-6 rounded-2xl border-2 transition-all duration-500 shadow-sm ${pair.isSaved
+                      ? "bg-indigo-50/30 border-indigo-200 dark:bg-indigo-950/10 dark:border-indigo-800 ring-4 ring-indigo-500/10"
+                      : pair.matchStatus === "matched"
                         ? pair.selectedApproval?.hasil_cek === "sesuai"
-                          ? "bg-green-50/50 border-green-200 dark:bg-green-950/20 dark:border-green-800"
-                          : "bg-red-50/50 border-red-200 dark:bg-red-950/20 dark:border-red-800"
-                        : pair.matchStatus === "ambiguous"
-                          ? "bg-amber-50/50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800"
-                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-                    }`}
+                          ? "bg-green-50/30 border-green-200 dark:bg-green-950/10 dark:border-green-800"
+                          : "bg-red-50/30 border-red-200 dark:bg-red-950/10 dark:border-red-800"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                      }`}
                   >
+                    {/* Badge Sudah Simpan */}
+                    {pair.isSaved && (
+                      <div className="absolute -top-3 -right-3 bg-indigo-600 text-white px-4 py-1 rounded-full text-xs font-black shadow-lg animate-bounce uppercase tracking-widest z-10">
+                        Tersimpan
+                      </div>
+                    )}
+
                     {/* --- HEADER SECTION --- */}
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-5">
-                      <div className="flex items-center gap-4 w-full md:w-auto">
-                        <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold text-sm border border-slate-200 dark:border-slate-700">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black text-lg border border-slate-200 dark:border-slate-700 shadow-sm">
                           {index + 1}
                         </div>
-                        <div className="flex-1 group">
+                        <div className="flex-1">
                           <input
                             type="text"
                             value={pair.docName || `Dokumen #${index + 1}`}
-                            onChange={(e) =>
-                              handleNameChange(index, e.target.value)
-                            }
-                            className="block w-full font-bold text-xl text-slate-800 dark:text-slate-100 bg-transparent border-b-2 border-transparent hover:border-slate-300 focus:border-blue-500 outline-none transition-all py-1"
-                            placeholder="Masukkan nama dokumen..."
+                            onChange={(e) => handleNameChange(index, e.target.value)}
+                            className="block w-full font-black text-xl text-slate-800 dark:text-slate-100 bg-transparent border-b-2 border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none transition-all py-1"
                           />
-                          <div className="flex gap-2 items-center mt-1">
+                          <div className="flex gap-3 items-center mt-1">
                             {pair.ocrStatus === "success" && (
-                              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-green-600 dark:text-green-400">
-                                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />{" "}
-                                OCR Terverifikasi
+                              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-md">
+                                OCR Terdeteksi
                               </span>
                             )}
                             {pair.ocrStatus === "processing" && (
-                              <span className="text-[10px] font-bold uppercase text-blue-500 animate-pulse">
-                                Memproses OCR...
+                              <span className="text-[10px] font-bold uppercase text-blue-500 animate-pulse bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded-md">
+                                Menganalisa...
                               </span>
                             )}
                           </div>
@@ -769,232 +913,208 @@ export default function Home() {
                       </div>
 
                       {/* Action Toolbar */}
-                      <div className="flex items-center self-end md:self-center gap-2 bg-white/50 dark:bg-slate-800/50 p-1.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 shadow-inner">
+                      <div className="flex items-center gap-2 bg-slate-100/50 dark:bg-slate-800/50 p-2 rounded-2xl border border-slate-200 dark:border-slate-700">
+                        <button
+                          onClick={() => handleDelete(index)}
+                          className="p-2 rounded-xl hover:bg-red-500 hover:text-white text-red-500 transition-all"
+                          title="Hapus"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                         <button
                           onClick={() => handleRetryOcr(index)}
                           disabled={pair.ocrStatus === "processing"}
-                          className="p-2.5 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-600 transition-colors disabled:opacity-30"
-                          title="Scan Ulang"
+                          className="p-2 rounded-xl hover:bg-amber-500 hover:text-white text-amber-500 transition-all disabled:opacity-30"
                         >
-                          <svg
-                            className={`w-5 h-5 ${pair.ocrStatus === "processing" ? "animate-spin" : ""}`}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                            />
+                          <svg className={`w-5 h-5 ${pair.ocrStatus === "processing" ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                           </svg>
                         </button>
-                        <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
+                        <div className="w-px h-6 bg-slate-300 dark:bg-slate-600 mx-1" />
                         <button
-                          onClick={() => handleSave(index)} // <--- TAMBAHIN INI
-                          className={`flex items-center gap-2 px-5 py-2 text-white rounded-xl text-sm font-bold transition-all active:scale-95 shadow-lg ${
-                            pair.matchStatus === "matched"
-                              ? "bg-indigo-600 hover:bg-indigo-700"
-                              : "bg-gray-400 opacity-50 cursor-not-allowed"
-                          }`}
+                          onClick={() => handleSave(index)}
+                          disabled={pair.isSaved || pair.matchStatus !== "matched"}
+                          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black transition-all active:scale-95 shadow-md ${pair.isSaved
+                            ? "bg-green-500 text-white cursor-default"
+                            : pair.matchStatus === "matched"
+                              ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
+                              : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                            }`}
                         >
-                          <span>Simpan</span>
+                          {pair.isSaved ? "Tersimpan" : "Simpan Data"}
                         </button>
                       </div>
                     </div>
 
-                    {/* --- STATUS NOTIFICATION BAR --- */}
-                    <div className="mb-5">
-                      {pair.matchStatus === "loading" && (
-                        <div className="flex items-center gap-3 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-sm">
-                          <div className="w-4 h-4 border-2 border-t-transparent border-blue-600 rounded-full animate-spin" />
-                          Sinkronisasi dengan database BAPP...
-                        </div>
-                      )}
-
-                      {pair.matchStatus === "matched" && (
-                        <div
-                          className={`flex items-center justify-between p-3 rounded-xl font-bold text-sm border ${
-                            pair.selectedApproval?.hasil_cek === "sesuai"
-                              ? "text-green-700 bg-green-100 border-green-200 dark:bg-green-900/30 dark:border-green-800"
-                              : "text-red-700 bg-red-100 border-red-200 dark:bg-red-900/30 dark:border-red-800"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {pair.selectedApproval?.hasil_cek === "sesuai"
-                              ? "✅ Status: Sesuai"
-                              : "⚠️ Status: Tidak Sesuai"}
+                    {/* --- DATA INFO BOX --- */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      {/* Left: Metadata */}
+                      <div className="lg:col-span-4 space-y-4">
+                        {pair.matchStatus === "loading" && (
+                          <div className="p-4 rounded-xl border border-blue-100 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm animate-pulse">
+                            Menghubungkan ke database...
                           </div>
-                          <span className="text-[10px] opacity-70 uppercase tracking-widest">
-                            Verifikasi Selesai
-                          </span>
-                        </div>
-                      )}
+                        )}
 
-                      {pair.matchStatus === "not-matched" && (
-                        <div className="flex flex-col sm:flex-row justify-between items-center bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-200 dark:border-red-800 gap-3">
-                          <span className="text-sm font-semibold text-red-700 dark:text-red-400 italic font-mono">
-                            Data BAPP Tidak Ditemukan
-                          </span>
-                          <button
-                            onClick={() => handleManualCheck(index)}
-                            className="w-full sm:w-auto px-4 py-1.5 bg-white dark:bg-slate-800 text-red-600 rounded-lg border border-red-200 shadow-sm hover:bg-red-50 transition-colors font-bold text-xs"
-                          >
-                            Cari Manual
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                        {pair.matchStatus === "matched" && pair.selectedApproval && (
+                          <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-4 flex flex-col justify-center min-h-[160px]">
+                            {/* School Name - Primary Info */}
+                            <div>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nama Sekolah</p>
+                              <p className="text-xl md:text-2xl font-black text-slate-800 dark:text-white leading-tight">
+                                {pair.selectedApproval.nama_sekolah || "-"}
+                              </p>
+                            </div>
 
-                    {/* --- AMBIGUOUS SELECTION --- */}
-                    {pair.matchStatus === "ambiguous" && (
-                      <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <div className="bg-amber-100 dark:bg-amber-900/30 border-l-4 border-amber-500 p-4 rounded-r-2xl">
-                          <p className="text-sm font-bold text-amber-800 dark:text-amber-200 mb-3 flex items-center gap-2 uppercase tracking-tight">
-                            <svg
-                              className="w-5 h-5"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                            ⚠️ Ditemukan {pair.approvalData?.length || 0} data
-                            duplikat. Pilih yang benar:
-                          </p>
-                          <div className="grid grid-cols-1 gap-2">
-                            {pair.approvalData?.map((choice, cIdx) => (
-                              <button
-                                key={cIdx}
-                                onClick={() =>
-                                  handleSelectApproval(index, choice)
-                                }
-                                className="w-full text-left p-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 hover:shadow-md transition-all flex justify-between items-center group"
-                              >
-                                <div className="text-xs space-y-1">
-                                  <div className="flex gap-2">
-                                    <span className="text-slate-400 font-medium">
-                                      NPSN:
-                                    </span>
-                                    <span className="font-bold text-slate-700 dark:text-slate-200">
-                                      {choice.npsn}
-                                    </span>
-                                  </div>
-                                  <div className="flex gap-2 text-[10px]">
-                                    <span className="text-slate-400 font-medium tracking-widest uppercase">
-                                      Serial:
-                                    </span>
-                                    <span className="font-mono text-slate-600 dark:text-slate-300">
-                                      {choice.sn_bapp}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span
-                                    className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${choice.hasil_cek === "sesuai" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
-                                  >
-                                    {choice.hasil_cek}
-                                  </span>
-                                  <div className="bg-amber-500 group-hover:bg-amber-600 text-white p-1.5 rounded-lg transition-colors">
-                                    <svg
-                                      className="w-4 h-4"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      stroke="currentColor"
-                                      strokeWidth={3}
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M5 13l4 4L19 7"
-                                      />
-                                    </svg>
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                            {/* NPSN - Secondary Info */}
+                            <div>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">NPSN</p>
+                              <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
+                                {pair.selectedApproval.npsn}
+                              </p>
+                            </div>
 
-                    {/* --- IMAGE GRID --- */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {[
-                        { label: "Halaman Depan", src: pair.back, key: "back" },
-                        {
-                          label: "Halaman Belakang",
-                          src: pair.front,
-                          key: "front",
-                        },
-                      ].map((img) => (
-                        <div key={img.key} className="space-y-3">
-                          <div className="flex justify-between items-center px-1">
-                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">
-                              {img.label}
-                            </span>
-                            {!img.src && (
-                              <span className="text-[10px] text-red-400 italic">
-                                File Hilang
+                            {/* SN BAPP - Tertiary Info */}
+                            <div>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">SN Dokumen</p>
+                              <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
+                                {pair.selectedApproval.sn_bapp}
+                              </p>
+                            </div>
+
+                            {/* Status Pill */}
+                            <div>
+                              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${pair.selectedApproval.hasil_cek === "sesuai"
+                                ? "bg-green-100 text-green-700 border border-green-200"
+                                : "bg-red-100 text-red-700 border border-red-200"
+                                }`}>
+                                {pair.selectedApproval.hasil_cek === "sesuai" ? (
+                                  <>
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    SESUAI
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                    TIDAK SESUAI
+                                  </>
+                                )}
                               </span>
-                            )}
+                            </div>
                           </div>
+                        )}
 
-                          <div className="relative group overflow-hidden rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 aspect-[4/3] flex items-center justify-center">
-                            {img.src ? (
-                              <>
+                        {/* Duplikasi / Ambiguous Selection */}
+                        {pair.matchStatus === "ambiguous" && (
+                          <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 rounded-2xl p-4">
+                            <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
+                              ⚠️ Pilih salah satu ({pair.approvalData?.length} data):
+                            </p>
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                              {pair.approvalData?.map((choice, cIdx) => (
+                                <button
+                                  key={cIdx}
+                                  onClick={() => handleSelectApproval(index, choice)}
+                                  className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
+                                >
+                                  <div className="text-xs">
+                                    <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
+                                    <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
+                                  </div>
+                                  <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Not Found / Manual Search */}
+                        {pair.matchStatus === "not-matched" && (
+                          <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 p-5 rounded-2xl space-y-3">
+                            <div>
+                              <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-1">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Data BAPP Tidak Ditemukan
+                              </p>
+                              <p className="text-[10px] text-red-500/80 leading-tight">
+                                Sistem tidak menemukan kecocokan otomatis. Silakan cari manual menggunakan NPSN.
+                              </p>
+                            </div>
+
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const formData = new FormData(e.currentTarget);
+                                const npsn = formData.get("npsn") as string;
+                                if (npsn) handleManualCheck(index, npsn);
+                              }}
+                              className="flex gap-2"
+                            >
+                              <input
+                                type="text"
+                                name="npsn"
+                                placeholder="Ketik NPSN..."
+                                className="flex-1 px-3 py-2 text-xs font-bold rounded-xl border border-red-200 dark:border-red-800/50 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500 placeholder:font-normal"
+                              />
+                              <button
+                                type="submit"
+                                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors shadow-sm shadow-red-200 dark:shadow-none"
+                              >
+                                CARI
+                              </button>
+                            </form>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right: Image Preview Grid */}
+                      <div className="lg:col-span-8 grid grid-cols-2 gap-4 relative">
+                        {[
+                          { label: "Depan", src: pair.back },
+                          { label: "Belakang", src: pair.front },
+                        ].map((img, i) => (
+                          <div key={i} className="group relative">
+                            <div className="absolute top-2 left-2 z-10">
+                              <span className="bg-black/50 backdrop-blur-md text-white text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest">
+                                {img.label}
+                              </span>
+                            </div>
+
+                            <div className="aspect-[3/4] rounded-xl overflow-hidden border-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-950 group-hover:border-indigo-400 transition-all shadow-sm">
+                              {img.src ? (
                                 <img
                                   src={img.src}
                                   alt={img.label}
                                   onClick={() => setPreviewImage(img.src!)}
-                                  className="w-full h-full object-contain cursor-zoom-in group-hover:scale-105 transition-transform duration-500"
+                                  className="w-full h-full object-cover cursor-zoom-in transition-transform duration-700 group-hover:scale-110"
                                 />
-                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                                  <div className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-full border border-white/30 text-white text-xs font-bold flex items-center gap-2">
-                                    <svg
-                                      className="w-4 h-4"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      stroke="currentColor"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
-                                      />
-                                    </svg>
-                                    Perbesar Gambar
-                                  </div>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="flex flex-col items-center gap-2 text-slate-300 dark:text-slate-700">
-                                <svg
-                                  className="w-12 h-12"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                  strokeWidth={1}
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                  />
-                                </svg>
-                                <span className="text-xs font-medium">
-                                  Tidak ada gambar
-                                </span>
-                              </div>
-                            )}
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">No Image</div>
+                              )}
+
+                              {/* Overlay saat hover */}
+                              <div className="absolute inset-0 bg-indigo-900/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+
+                        {/* HIGHLIGHT KODE (Muncul melayang setelah simpan) */}
+                        {pair.isSaved && pair.selectedApproval?.kode && (
+                          <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+                            <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-[0_20px_50px_rgba(79,70,229,0.4)] border-4 border-white dark:border-slate-900 transform -rotate-3 animate-in zoom-in duration-500 flex flex-col items-center">
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-80">Kode Dokumen</span>
+                              <span className="text-5xl font-black tracking-tighter drop-shadow-md">
+                                {pair.selectedApproval.kode}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1007,34 +1127,75 @@ export default function Home() {
       {/* Image Preview Modal */}
       {previewImage && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
           onClick={() => setPreviewImage(null)}
         >
-          <div className="relative max-w-7xl max-h-[90vh]">
-            <img
-              src={previewImage}
-              alt="Preview"
-              className="max-h-[90vh] w-auto rounded-lg shadow-2xl hover:scale-105 transition-transform"
-            />
+          <div
+            className="relative w-full h-full flex flex-col items-center justify-center p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button Top Right */}
             <button
               onClick={() => setPreviewImage(null)}
-              className="absolute -top-12 right-0 text-white hover:text-gray-300 p-2"
+              className="absolute top-4 right-4 z-50 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-all backdrop-blur-sm"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                stroke="currentColor"
-                className="w-8 h-8"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18 18 6M6 6l12 12"
-                />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+
+            <TransformWrapper
+              initialScale={1}
+              minScale={0.5}
+              maxScale={4}
+              centerOnInit
+            >
+              {({ zoomIn, zoomOut, resetTransform }) => (
+                <>
+                  {/* Toolbar Controls */}
+                  <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-black/50 backdrop-blur-md border border-white/10 px-6 py-3 rounded-full shadow-2xl">
+                    <button
+                      onClick={() => zoomOut()}
+                      className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
+                      title="Zoom Out"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => resetTransform()}
+                      className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-indigo-500/30"
+                      title="Reset Zoom"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={() => zoomIn()}
+                      className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
+                      title="Zoom In"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Image Viewport */}
+                  <TransformComponent
+                    wrapperClass="!w-full !h-full flex items-center justify-center"
+                    wrapperStyle={{ width: "100%", height: "100%" }}
+                    contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    <img
+                      src={previewImage}
+                      alt="Preview"
+                      className="max-h-[85vh] max-w-[90vw] w-auto h-auto object-contain rounded-lg shadow-2xl"
+                    />
+                  </TransformComponent>
+                </>
+              )}
+            </TransformWrapper>
           </div>
         </div>
       )}
