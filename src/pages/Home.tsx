@@ -30,10 +30,49 @@ interface ScanPair {
   | "ambiguous"
   | "error";
   approvalData?: ApprovalData[]; // Stores the list of potential matches
-  selectedApproval?: ApprovalData; // Stores the user-selected or auto-selected match
+  selectedApproval?: ApprovalData; // Stores user-selected or auto-selected match
   isSaved?: boolean;
+  isSaving?: boolean;
+  frontRotation?: number; // 0, 90, 180, 270
+  backRotation?: number;
+  isRotating?: boolean;
 }
 
+// Helper to rotate base64 image
+const rotateImageBase64 = (base64: string, degrees: number): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (degrees === 0) return resolve(base64);
+
+    const img = new Image();
+    img.src = base64;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("Canvas context not available"));
+
+      // Calculate new dimensions
+      if (degrees === 90 || degrees === 270) {
+        canvas.width = img.height;
+        canvas.height = img.width;
+      } else {
+        canvas.width = img.width;
+        canvas.height = img.height;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+
+      // Translate to center for rotation
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((degrees * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+
+      resolve(canvas.toDataURL("image/jpeg", 0.9)); // Keep quality high
+    };
+    img.onerror = reject;
+  });
+};
 interface ScanResponse {
   success: boolean;
   data?: ScanPair[];
@@ -55,6 +94,12 @@ export default function Home() {
 
   // State for Image Preview Modal
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Drag and Drop State
+  const [draggedItem, setDraggedItem] = useState<{
+    index: number;
+    property: "front" | "back"; // Property name in ScanPair
+  } | null>(null);
 
   // View Mode State
   const [viewMode, setViewMode] = useState<"start" | "results">("start");
@@ -175,14 +220,25 @@ export default function Home() {
       return;
     }
 
+    // Set loading state
+    setScanResults((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], isSaving: true };
+      return updated;
+    });
+
     try {
+      // Apply rotation if needed before sending
+      const processedFront = await rotateImageBase64(item.back || "", item.backRotation || 0);
+      const processedBack = await rotateImageBase64(item.front || "", item.frontRotation || 0);
+
       const payload = {
         doc_name: item.docName || `Dokumen #${index + 1}`,
         npsn: item.selectedApproval.npsn,
         sn_bapp: item.selectedApproval.sn_bapp,
         hasil_cek: item.selectedApproval.hasil_cek,
-        image_front: item.back, // Base64 Front
-        image_back: item.front, // Base64 Back
+        image_front: processedFront, // Base64 Front (UI "Depan" is item.back)
+        image_back: processedBack, // Base64 Back (UI "Belakang" is item.front)
         nama_sekolah: item.selectedApproval.nama_sekolah,
       };
 
@@ -196,12 +252,20 @@ export default function Home() {
       );
 
       const result = await res.json();
-      if (result.success) {
-        // Mark as saved
-        const updated = [...scanResults];
-        updated[index].isSaved = true;
-        setScanResults(updated);
 
+      setScanResults((prev) => {
+        const updated = [...prev];
+        // Ensure index is still valid (basic check)
+        if (updated[index]) {
+          updated[index] = { ...updated[index], isSaving: false };
+          if (result.success) {
+            updated[index].isSaved = true;
+          }
+        }
+        return updated;
+      });
+
+      if (result.success) {
         Swal.fire({
           icon: "success",
           title: "Berhasil",
@@ -218,6 +282,15 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Save error:", error);
+
+      setScanResults((prev) => {
+        const updated = [...prev];
+        if (updated[index]) {
+          updated[index] = { ...updated[index], isSaving: false };
+        }
+        return updated;
+      });
+
       Swal.fire({
         icon: "error",
         title: "Error",
@@ -551,6 +624,161 @@ export default function Home() {
         });
       }
     });
+  };
+
+  const handleRotate = async (index: number, property: "front" | "back") => {
+    // Prevent multiple clicks
+    if (scanResults[index].isRotating) return;
+
+    setScanResults((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], isRotating: true };
+      return updated;
+    });
+
+    try {
+      const item = scanResults[index];
+      // Logic check: The UI maps "Depan" -> item.back and "Belakang" -> item.front
+      // But we pass the property name ("back" or "front") directly from the UI loop.
+      // So we just access item[property].
+
+      const currentImg = item[property];
+
+      if (currentImg) {
+        // Rotate 90 degrees
+        const newImg = await rotateImageBase64(currentImg, 90);
+
+        setScanResults((prev) => {
+          const updated = [...prev];
+          const newItem = { ...updated[index], isRotating: false };
+
+          // Update image
+          if (property === "front") {
+            newItem.front = newImg;
+            newItem.frontRotation = 0; // Reset rotation since it's burnt in
+          } else {
+            newItem.back = newImg;
+            newItem.backRotation = 0;
+          }
+
+          updated[index] = newItem;
+          return updated;
+        });
+      }
+    } catch (error) {
+      console.error("Rotation failed:", error);
+      setScanResults((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], isRotating: false };
+        return updated;
+      });
+    }
+  };
+
+  // --- DRAG AND DROP HANDLERS ---
+  const handleDragStart = (
+    index: number,
+    property: "front" | "back"
+  ) => {
+    setDraggedItem({ index, property });
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Allow dropping
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (index: number, targetProperty: "front" | "back") => {
+    if (!draggedItem) return;
+
+    const sourceIndex = draggedItem.index;
+    const sourceProperty = draggedItem.property;
+
+    // Don't do anything if dropping on itself
+    if (sourceIndex === index && sourceProperty === targetProperty) {
+      setDraggedItem(null);
+      return;
+    }
+
+    const updated = [...scanResults];
+
+    // Helper to get rotation key
+    const getRotKey = (p: "front" | "back") => p === "front" ? "frontRotation" : "backRotation";
+
+    if (sourceIndex === index) {
+      // SWAP WITHIN SAME CARD
+      const item = { ...updated[index] };
+
+      const sourceVal = item[sourceProperty];
+      const targetVal = item[targetProperty];
+
+      const sourceRot = item[getRotKey(sourceProperty)];
+      const targetRot = item[getRotKey(targetProperty)];
+
+      // Update Source Property with Target Value
+      if (sourceProperty === "front") {
+        item.front = targetVal || "";
+      } else {
+        item.back = targetVal;
+      }
+
+      // Update Target Property with Source Value
+      if (targetProperty === "front") {
+        item.front = sourceVal || "";
+      } else {
+        item.back = sourceVal;
+      }
+
+      // Swap Rotations
+      // Since frontRotation and backRotation are both number | undefined, dynamic access is safe enough here, 
+      // but let's be explicit to avoid any confusion or future lints.
+      if (sourceProperty === "front") item.frontRotation = targetRot;
+      else item.backRotation = targetRot;
+
+      if (targetProperty === "front") item.frontRotation = sourceRot;
+      else item.backRotation = sourceRot;
+
+      updated[index] = item;
+    } else {
+      // SWAP BETWEEN CARDS
+      const sourceItem = { ...updated[sourceIndex] };
+      const targetItem = { ...updated[index] };
+
+      const sourceVal = sourceItem[sourceProperty];
+      const sourceRot = sourceItem[getRotKey(sourceProperty)];
+
+      const targetVal = targetItem[targetProperty];
+      const targetRot = targetItem[getRotKey(targetProperty)];
+
+      // Apply Swap
+      // 1. Move Target -> Source
+      if (sourceProperty === "front") {
+        sourceItem.front = targetVal || "";
+        sourceItem.frontRotation = targetRot;
+      } else {
+        sourceItem.back = targetVal;
+        sourceItem.backRotation = targetRot;
+      }
+
+      // 2. Move Source -> Target
+      if (targetProperty === "front") {
+        targetItem.front = sourceVal || "";
+        targetItem.frontRotation = sourceRot;
+      } else {
+        targetItem.back = sourceVal;
+        targetItem.backRotation = sourceRot;
+      }
+
+      updated[sourceIndex] = sourceItem;
+      updated[index] = targetItem;
+    }
+
+    setScanResults(updated);
+    setDraggedItem(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
   };
 
   return (
@@ -935,15 +1163,29 @@ export default function Home() {
                         <div className="w-px h-6 bg-slate-300 dark:bg-slate-600 mx-1" />
                         <button
                           onClick={() => handleSave(index)}
-                          disabled={pair.isSaved || pair.matchStatus !== "matched"}
+                          disabled={pair.isSaved || pair.matchStatus !== "matched" || pair.isSaving}
                           className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black transition-all active:scale-95 shadow-md ${pair.isSaved
                             ? "bg-green-500 text-white cursor-default"
-                            : pair.matchStatus === "matched"
-                              ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
-                              : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                            : pair.isSaving
+                              ? "bg-indigo-400 text-white cursor-wait"
+                              : pair.matchStatus === "matched"
+                                ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
+                                : "bg-slate-300 text-slate-500 cursor-not-allowed"
                             }`}
                         >
-                          {pair.isSaved ? "Tersimpan" : "Simpan Data"}
+                          {pair.isSaving ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Menyimpan...
+                            </>
+                          ) : pair.isSaved ? (
+                            "Tersimpan"
+                          ) : (
+                            "Simpan Data"
+                          )}
                         </button>
                       </div>
                     </div>
@@ -1075,15 +1317,47 @@ export default function Home() {
                       {/* Right: Image Preview Grid */}
                       <div className="lg:col-span-8 grid grid-cols-2 gap-4 relative">
                         {[
-                          { label: "Depan", src: pair.back },
-                          { label: "Belakang", src: pair.front },
+                          { label: "Depan", property: "back" as const, src: pair.back, rot: pair.backRotation || 0 },
+                          { label: "Belakang", property: "front" as const, src: pair.front, rot: pair.frontRotation || 0 },
                         ].map((img, i) => (
-                          <div key={i} className="group relative">
-                            <div className="absolute top-2 left-2 z-10">
+                          <div
+                            key={i}
+                            className={`group relative transition-all duration-200 ${draggedItem?.index === index && draggedItem?.property === img.property
+                              ? "opacity-40 scale-95"
+                              : "opacity-100"
+                              }`}
+                            draggable
+                            onDragStart={() => handleDragStart(index, img.property)}
+                            onDragOver={handleDragOver}
+                            onDrop={() => handleDrop(index, img.property)}
+                            onDragEnd={handleDragEnd}
+                          >
+                            <div className="absolute top-2 left-2 z-10 pointer-events-none flex gap-2">
                               <span className="bg-black/50 backdrop-blur-md text-white text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest">
                                 {img.label}
                               </span>
                             </div>
+
+                            {/* Rotate Button */}
+                            {img.src && (
+                              <button
+                                onClick={() => handleRotate(index, img.property)}
+                                disabled={pair.isRotating}
+                                className="absolute top-2 right-2 z-20 bg-black/50 hover:bg-black/70 text-white p-1.5 rounded-full backdrop-blur-md transition-colors opacity-0 group-hover:opacity-100 disabled:cursor-wait disabled:opacity-100"
+                                title="Putar Gambar 90° (Permanen)"
+                              >
+                                {pair.isRotating ? (
+                                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                ) : (
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                )}
+                              </button>
+                            )}
 
                             <div className="aspect-[3/4] rounded-xl overflow-hidden border-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-950 group-hover:border-indigo-400 transition-all shadow-sm">
                               {img.src ? (
@@ -1091,10 +1365,16 @@ export default function Home() {
                                   src={img.src}
                                   alt={img.label}
                                   onClick={() => setPreviewImage(img.src!)}
-                                  className="w-full h-full object-cover cursor-zoom-in transition-transform duration-700 group-hover:scale-110"
+                                  className="w-full h-full object-cover cursor-grab active:cursor-grabbing transition-transform duration-300 group-hover:scale-105"
+                                  style={{ transform: `rotate(${img.rot}deg)` }}
                                 />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">No Image</div>
+                                <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs flex-col gap-2">
+                                  <svg className="w-8 h-8 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  <span>Kosong (Drop Here)</span>
+                                </div>
                               )}
 
                               {/* Overlay saat hover */}
