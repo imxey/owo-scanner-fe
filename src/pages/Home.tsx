@@ -783,16 +783,50 @@ export default function Home() {
   };
 
   const renderInfoPanel = (pair: ScanPair, index: number) => {
+    // Reusable Manual Search Form
+    const ManualSearchForm = () => (
+      <div className="pt-4 mt-auto">
+         <div className="w-full h-px bg-slate-200 dark:bg-slate-700 mb-4" />
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+          Cari Manual / Ubah Data
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const formData = new FormData(e.currentTarget);
+            const npsn = formData.get("npsn") as string;
+            // Always allow re-search
+            if (npsn) handleManualCheck(index, npsn);
+          }}
+          className="flex gap-2"
+        >
+          <input
+            type="text"
+            name="npsn"
+            placeholder="Ketik NPSN..."
+            className="flex-1 px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:font-normal text-slate-700 dark:text-slate-200"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs font-black transition-colors"
+          >
+            CARI
+          </button>
+        </form>
+      </div>
+    );
+
     return (
-      <>
+      <div className="flex flex-col h-full">
         {pair.matchStatus === "loading" && (
-          <div className="p-4 rounded-xl border border-blue-100 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm animate-pulse">
+          <div className="p-4 rounded-xl border border-blue-100 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm animate-pulse mb-4">
             Menghubungkan ke database...
           </div>
         )}
 
+        {/* MATCHED STATE */}
         {pair.matchStatus === "matched" && pair.selectedApproval && (
-          <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-4 flex flex-col justify-center min-h-[160px]">
+          <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-4 flex flex-col min-h-[160px]">
             {/* School Name - Primary Info */}
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nama Sekolah</p>
@@ -836,37 +870,46 @@ export default function Home() {
                 )}
               </span>
             </div>
+
+             {/* Manual Search in Matched State */}
+             <ManualSearchForm />
           </div>
         )}
 
-        {/* Duplikasi / Ambiguous Selection */}
+        {/* AMBIGUOUS / DUPLICATE STATE */}
         {pair.matchStatus === "ambiguous" && (
-          <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 rounded-2xl p-4">
-            <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
-              ⚠️ Pilih salah satu ({pair.approvalData?.length} data):
-            </p>
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-              {pair.approvalData?.map((choice, cIdx) => (
-                <button
-                  key={cIdx}
-                  onClick={() => handleSelectApproval(index, choice)}
-                  className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
-                >
-                  <div className="text-xs">
-                    <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
-                    <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
-                  </div>
-                  <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                  </div>
-                </button>
-              ))}
+          <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 rounded-2xl p-4 flex flex-col gap-4">
+             <div>
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
+                ⚠️ Pilih salah satu ({pair.approvalData?.length} data):
+                </p>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                {pair.approvalData?.map((choice, cIdx) => (
+                    <button
+                    key={cIdx}
+                    onClick={() => handleSelectApproval(index, choice)}
+                    className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
+                    >
+                    <div className="text-xs">
+                        <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
+                        <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
+                    </div>
+                    <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                    </button>
+                ))}
+                </div>
             </div>
+
+             {/* Manual Search in Ambiguous State */}
+             <ManualSearchForm />
           </div>
         )}
-        {/* Not Found / Manual Search */}
+
+        {/* NOT MATCHED / NOT FOUND STATE */}
         {pair.matchStatus === "not-matched" && (
-          <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 p-5 rounded-2xl space-y-3">
+          <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 p-5 rounded-2xl space-y-3 flex flex-col">
             <div>
               <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-1">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -879,31 +922,19 @@ export default function Home() {
               </p>
             </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                const npsn = formData.get("npsn") as string;
-                if (npsn) handleManualCheck(index, npsn);
-              }}
-              className="flex gap-2"
-            >
-              <input
-                type="text"
-                name="npsn"
-                placeholder="Ketik NPSN..."
-                className="flex-1 px-3 py-2 text-xs font-bold rounded-xl border border-red-200 dark:border-red-800/50 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500 placeholder:font-normal"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors shadow-sm shadow-red-200 dark:shadow-none"
-              >
-                CARI
-              </button>
-            </form>
+            {/* Manual Search (Already existing, but using the Reusable Component for consistency if desired, or keeping custom one?) 
+                The previous one had slightly specific styling (red borders). 
+                I'll stick to the reusable one to keep it uniform or adapt the reusable one?
+                Let's just use the reusable one, it looks clean enough.
+                Wait, the previous one was Red themed for Not Found.
+                Let's include the specific red input in the ManualSearchForm if we wanted context, 
+                but a generic Blue/Neutral search bar is fine too.
+                Actually, let's just use ManualSearchForm to ensure it's "bisa dicari by npsn manual lagi".
+            */}
+             <ManualSearchForm />
           </div>
         )}
-      </>
+      </div>
     );
   };
 
