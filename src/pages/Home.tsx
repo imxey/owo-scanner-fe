@@ -240,6 +240,7 @@ export default function Home() {
         image_front: processedFront, // Base64 Front (UI "Depan" is item.back)
         image_back: processedBack, // Base64 Back (UI "Belakang" is item.front)
         nama_sekolah: item.selectedApproval.nama_sekolah,
+        kode: item.selectedApproval.kode, // Added Kode
       };
 
       const res = await fetch(
@@ -781,6 +782,131 @@ export default function Home() {
     setDraggedItem(null);
   };
 
+  const renderInfoPanel = (pair: ScanPair, index: number) => {
+    return (
+      <>
+        {pair.matchStatus === "loading" && (
+          <div className="p-4 rounded-xl border border-blue-100 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm animate-pulse">
+            Menghubungkan ke database...
+          </div>
+        )}
+
+        {pair.matchStatus === "matched" && pair.selectedApproval && (
+          <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-4 flex flex-col justify-center min-h-[160px]">
+            {/* School Name - Primary Info */}
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nama Sekolah</p>
+              <p className="text-xl md:text-2xl font-black text-slate-800 dark:text-white leading-tight">
+                {pair.selectedApproval.nama_sekolah || "-"}
+              </p>
+            </div>
+
+            {/* NPSN - Secondary Info */}
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">NPSN</p>
+              <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
+                {pair.selectedApproval.npsn}
+              </p>
+            </div>
+
+            {/* SN BAPP - Tertiary Info */}
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">SN Dokumen</p>
+              <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
+                {pair.selectedApproval.sn_bapp}
+              </p>
+            </div>
+
+            {/* Status Pill */}
+            <div>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${pair.selectedApproval.hasil_cek === "sesuai"
+                ? "bg-green-100 text-green-700 border border-green-200"
+                : "bg-red-100 text-red-700 border border-red-200"
+                }`}>
+                {pair.selectedApproval.hasil_cek === "sesuai" ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    SESUAI
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    TIDAK SESUAI
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Duplikasi / Ambiguous Selection */}
+        {pair.matchStatus === "ambiguous" && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 rounded-2xl p-4">
+            <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
+              ⚠️ Pilih salah satu ({pair.approvalData?.length} data):
+            </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+              {pair.approvalData?.map((choice, cIdx) => (
+                <button
+                  key={cIdx}
+                  onClick={() => handleSelectApproval(index, choice)}
+                  className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
+                >
+                  <div className="text-xs">
+                    <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
+                    <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
+                  </div>
+                  <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Not Found / Manual Search */}
+        {pair.matchStatus === "not-matched" && (
+          <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 p-5 rounded-2xl space-y-3">
+            <div>
+              <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-1">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Data BAPP Tidak Ditemukan
+              </p>
+              <p className="text-[10px] text-red-500/80 leading-tight">
+                Sistem tidak menemukan kecocokan otomatis. Silakan cari manual menggunakan NPSN.
+              </p>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const npsn = formData.get("npsn") as string;
+                if (npsn) handleManualCheck(index, npsn);
+              }}
+              className="flex gap-2"
+            >
+              <input
+                type="text"
+                name="npsn"
+                placeholder="Ketik NPSN..."
+                className="flex-1 px-3 py-2 text-xs font-bold rounded-xl border border-red-200 dark:border-red-800/50 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500 placeholder:font-normal"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors shadow-sm shadow-red-200 dark:shadow-none"
+              >
+                CARI
+              </button>
+            </form>
+          </div>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex items-center justify-center p-4">
       {/* Main Card Container with Dynamic Width */}
@@ -1194,124 +1320,7 @@ export default function Home() {
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                       {/* Left: Metadata */}
                       <div className="lg:col-span-4 space-y-4">
-                        {pair.matchStatus === "loading" && (
-                          <div className="p-4 rounded-xl border border-blue-100 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm animate-pulse">
-                            Menghubungkan ke database...
-                          </div>
-                        )}
-
-                        {pair.matchStatus === "matched" && pair.selectedApproval && (
-                          <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-4 flex flex-col justify-center min-h-[160px]">
-                            {/* School Name - Primary Info */}
-                            <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nama Sekolah</p>
-                              <p className="text-xl md:text-2xl font-black text-slate-800 dark:text-white leading-tight">
-                                {pair.selectedApproval.nama_sekolah || "-"}
-                              </p>
-                            </div>
-
-                            {/* NPSN - Secondary Info */}
-                            <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">NPSN</p>
-                              <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
-                                {pair.selectedApproval.npsn}
-                              </p>
-                            </div>
-
-                            {/* SN BAPP - Tertiary Info */}
-                            <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">SN Dokumen</p>
-                              <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
-                                {pair.selectedApproval.sn_bapp}
-                              </p>
-                            </div>
-
-                            {/* Status Pill */}
-                            <div>
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${pair.selectedApproval.hasil_cek === "sesuai"
-                                ? "bg-green-100 text-green-700 border border-green-200"
-                                : "bg-red-100 text-red-700 border border-red-200"
-                                }`}>
-                                {pair.selectedApproval.hasil_cek === "sesuai" ? (
-                                  <>
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                    SESUAI
-                                  </>
-                                ) : (
-                                  <>
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                                    TIDAK SESUAI
-                                  </>
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Duplikasi / Ambiguous Selection */}
-                        {pair.matchStatus === "ambiguous" && (
-                          <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 rounded-2xl p-4">
-                            <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
-                              ⚠️ Pilih salah satu ({pair.approvalData?.length} data):
-                            </p>
-                            <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                              {pair.approvalData?.map((choice, cIdx) => (
-                                <button
-                                  key={cIdx}
-                                  onClick={() => handleSelectApproval(index, choice)}
-                                  className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
-                                >
-                                  <div className="text-xs">
-                                    <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
-                                    <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
-                                  </div>
-                                  <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {/* Not Found / Manual Search */}
-                        {pair.matchStatus === "not-matched" && (
-                          <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 p-5 rounded-2xl space-y-3">
-                            <div>
-                              <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-1">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                Data BAPP Tidak Ditemukan
-                              </p>
-                              <p className="text-[10px] text-red-500/80 leading-tight">
-                                Sistem tidak menemukan kecocokan otomatis. Silakan cari manual menggunakan NPSN.
-                              </p>
-                            </div>
-
-                            <form
-                              onSubmit={(e) => {
-                                e.preventDefault();
-                                const formData = new FormData(e.currentTarget);
-                                const npsn = formData.get("npsn") as string;
-                                if (npsn) handleManualCheck(index, npsn);
-                              }}
-                              className="flex gap-2"
-                            >
-                              <input
-                                type="text"
-                                name="npsn"
-                                placeholder="Ketik NPSN..."
-                                className="flex-1 px-3 py-2 text-xs font-bold rounded-xl border border-red-200 dark:border-red-800/50 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500 placeholder:font-normal"
-                              />
-                              <button
-                                type="submit"
-                                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors shadow-sm shadow-red-200 dark:shadow-none"
-                              >
-                                CARI
-                              </button>
-                            </form>
-                          </div>
-                        )}
+                        {renderInfoPanel(pair, index)}
                       </div>
 
                       {/* Right: Image Preview Grid */}
@@ -1405,80 +1414,99 @@ export default function Home() {
       </div>
 
       {/* Image Preview Modal */}
-      {previewImage && (
-        <div
-          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
-          onClick={() => setPreviewImage(null)}
-        >
+      {
+        previewImage && (
           <div
-            className="relative w-full h-full flex flex-col items-center justify-center p-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
+            onClick={() => setPreviewImage(null)}
           >
-            {/* Close Button Top Right */}
-            <button
-              onClick={() => setPreviewImage(null)}
-              className="absolute top-4 right-4 z-50 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-all backdrop-blur-sm"
+            <div
+              className="relative w-full h-full flex flex-col items-center justify-center p-4"
+              onClick={(e) => e.stopPropagation()}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              {/* Floating Info Panel (Left) using Render Function */}
+              {(() => {
+                const currentIndex = scanResults.findIndex(
+                  (p) => p.front === previewImage || p.back === previewImage
+                );
+                const currentPair = scanResults[currentIndex];
 
-            <TransformWrapper
-              initialScale={1}
-              minScale={0.5}
-              maxScale={4}
-              centerOnInit
-            >
-              {({ zoomIn, zoomOut, resetTransform }) => (
-                <>
-                  {/* Toolbar Controls */}
-                  <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-black/50 backdrop-blur-md border border-white/10 px-6 py-3 rounded-full shadow-2xl">
-                    <button
-                      onClick={() => zoomOut()}
-                      className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
-                      title="Zoom Out"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => resetTransform()}
-                      className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-indigo-500/30"
-                      title="Reset Zoom"
-                    >
-                      Reset
-                    </button>
-                    <button
-                      onClick={() => zoomIn()}
-                      className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
-                      title="Zoom In"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
-                    </button>
-                  </div>
+                if (currentPair) {
+                  return (
+                    <div className="absolute top-1/2 -translate-y-1/2 left-4 z-50 w-80 max-h-[80vh] overflow-y-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 p-4 animate-in slide-in-from-left-4 fade-in duration-300">
+                      {renderInfoPanel(currentPair, currentIndex)}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
-                  {/* Image Viewport */}
-                  <TransformComponent
-                    wrapperClass="!w-full !h-full flex items-center justify-center"
-                    wrapperStyle={{ width: "100%", height: "100%" }}
-                    contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
-                  >
-                    <img
-                      src={previewImage}
-                      alt="Preview"
-                      className="max-h-[85vh] max-w-[90vw] w-auto h-auto object-contain rounded-lg shadow-2xl"
-                    />
-                  </TransformComponent>
-                </>
-              )}
-            </TransformWrapper>
+              {/* Close Button Top Right */}
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="absolute top-4 right-4 z-50 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-all backdrop-blur-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <TransformWrapper
+                initialScale={1}
+                minScale={0.5}
+                maxScale={4}
+                centerOnInit
+              >
+                {({ zoomIn, zoomOut, resetTransform }) => (
+                  <>
+                    {/* Toolbar Controls */}
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-black/50 backdrop-blur-md border border-white/10 px-6 py-3 rounded-full shadow-2xl">
+                      <button
+                        onClick={() => zoomOut()}
+                        className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
+                        title="Zoom Out"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => resetTransform()}
+                        className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-indigo-500/30"
+                        title="Reset Zoom"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        onClick={() => zoomIn()}
+                        className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
+                        title="Zoom In"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Image Viewport */}
+                    <TransformComponent
+                      wrapperClass="!w-full !h-full flex items-center justify-center"
+                      wrapperStyle={{ width: "100%", height: "100%" }}
+                      contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <img
+                        src={previewImage}
+                        alt="Preview"
+                        className="max-h-[85vh] max-w-[90vw] w-auto h-auto object-contain rounded-lg shadow-2xl"
+                      />
+                    </TransformComponent>
+                  </>
+                )}
+              </TransformWrapper>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }

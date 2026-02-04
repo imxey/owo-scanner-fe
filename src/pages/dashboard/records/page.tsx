@@ -8,6 +8,7 @@ interface ScanRecord {
     npsn: string;
     sn_bapp: string;
     hasil_cek: string;
+    kode: string; // Added field
     path: string;
     created_at: string;
 }
@@ -96,6 +97,7 @@ export default function RecordsPage() {
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Date</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">NPSN / Doc Name</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">SN BAPP</th>
+                                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Kode</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Action</th>
                             </tr>
@@ -103,7 +105,7 @@ export default function RecordsPage() {
                         <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center">
+                                    <td colSpan={6} className="px-6 py-8 text-center">
                                         <div className="flex justify-center">
                                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                                         </div>
@@ -111,7 +113,7 @@ export default function RecordsPage() {
                                 </tr>
                             ) : records.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center text-slate-500 dark:text-slate-400 italic">
+                                    <td colSpan={6} className="px-6 py-8 text-center text-slate-500 dark:text-slate-400 italic">
                                         No records found.
                                     </td>
                                 </tr>
@@ -127,6 +129,9 @@ export default function RecordsPage() {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300 font-mono">
                                             {rec.sn_bapp}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300 font-bold">
+                                            {rec.kode || "-"}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full capitalize
