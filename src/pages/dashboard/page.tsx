@@ -102,13 +102,45 @@ export default function Dashboard() {
 
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
-          Scanner Dashboard
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400">
-          Real-time statistics of school document scanning progress.
-        </p>
+      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
+            Scanner Dashboard
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400">
+            Real-time statistics of school document scanning progress.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            const apiUrl = import.meta.env.VITE_SAVE_API_URL;
+            if (apiUrl) {
+              window.open(`${apiUrl}/export`, "_blank");
+            } else {
+              alert("API URL not configured!");
+            }
+          }}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2 font-medium shadow-sm"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <path d="M8 13h8" />
+            <path d="M8 17h8" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+          Export Excel
+        </button>
       </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden backdrop-blur-sm bg-opacity-90 dark:bg-opacity-90">
@@ -164,9 +196,9 @@ export default function Dashboard() {
                         <span className="text-xs text-slate-400">
                           {row.total_schools > 0
                             ? (
-                                (row.logs_accepted / row.total_schools) *
-                                100
-                              ).toFixed(1)
+                              (row.logs_accepted / row.total_schools) *
+                              100
+                            ).toFixed(1)
                             : 0}
                           %
                         </span>
@@ -180,8 +212,8 @@ export default function Dashboard() {
                         <span className="text-xs text-slate-400">
                           {row.total_schools > 0
                             ? ((row.scanned / row.total_schools) * 100).toFixed(
-                                1,
-                              )
+                              1,
+                            )
                             : 0}
                           %
                         </span>
