@@ -10,10 +10,21 @@ interface DashboardStat {
   not_scanned?: number;
 }
 
+interface WorkStat {
+  scanned: number;
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Work Stats State
+  const [workStats, setWorkStats] = useState<WorkStat | null>(null);
+  // Default to today YYYY-MM-DD
+  const [workDate, setWorkDate] = useState<string>(() => {
+    return new Date().toISOString().split("T")[0];
+  });
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -50,6 +61,30 @@ export default function Dashboard() {
 
     fetchStats();
   }, []);
+
+  // Fetch Work Stats when workDate changes
+  useEffect(() => {
+    const fetchWorkStats = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_SAVE_API_URL;
+        if (!apiUrl) return;
+
+        // Use same date for start and end to get single day stats
+        const res = await fetch(
+          `${apiUrl}/work-stats?start_date=${workDate}&end_date=${workDate}`,
+        );
+        if (!res.ok) return;
+
+        const json = await res.json();
+        if (json.success) {
+          setWorkStats(json.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch work stats:", err);
+      }
+    };
+    fetchWorkStats();
+  }, [workDate]);
 
   // Calculate Total Row manually
   const totalStat: DashboardStat = stats.reduce(
@@ -141,6 +176,54 @@ export default function Dashboard() {
           </svg>
           Export Excel
         </button>
+      </div>
+
+      {/* Work Stats Section */}
+      <div className="mb-8 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-blue-600"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            Laporan Harian
+          </h2>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={workDate}
+              onChange={(e) => setWorkDate(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+          <div className="bg-blue-50/50 dark:bg-blue-900/10 rounded-lg p-5 border border-blue-100 dark:border-blue-800">
+            <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">
+              Dokumen Discan
+            </p>
+            <p className="text-3xl font-bold text-slate-800 dark:text-white tabular-nums">
+              {workStats ? workStats.scanned.toLocaleString() : "..."}
+            </p>
+            <p className="text-xs text-slate-500 mt-2">
+              Total dokumen berhasil di-scan pada tanggal {workDate}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden backdrop-blur-sm bg-opacity-90 dark:bg-opacity-90">

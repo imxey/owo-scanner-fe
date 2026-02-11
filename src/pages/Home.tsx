@@ -307,9 +307,10 @@ export default function Home() {
     try {
       const isMock = import.meta.env.VITE_USE_MOCK === "true";
       const apiUrl = import.meta.env.VITE_API_URL;
+      const saveApiUrl = import.meta.env.VITE_SAVE_API_URL; // Mock is on backend server
 
       const endpoint = isMock
-        ? `${apiUrl}`
+        ? `${saveApiUrl}/mock-scan`
         : `${apiUrl}/scan?profile=${encodeURIComponent(profileName)}`;
 
       const response = await fetch(endpoint, {
@@ -369,7 +370,7 @@ export default function Home() {
       const text = result.data.text;
 
       // Extract BAPP Number
-      const match = text.match(/Nomor\s*[:]\s*([A-Z0-9]+)/i);
+      const match = text.match(/Nomor\s*[:]\s*[^A-Z0-9]*([A-Z0-9]+)/i);
       const detectedName = match && match[1] ? match[1] : null;
 
       return { text, detectedName };
@@ -786,7 +787,7 @@ export default function Home() {
     // Reusable Manual Search Form
     const ManualSearchForm = () => (
       <div className="pt-4 mt-auto">
-         <div className="w-full h-px bg-slate-200 dark:bg-slate-700 mb-4" />
+        <div className="w-full h-px bg-slate-200 dark:bg-slate-700 mb-4" />
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
           Cari Manual / Ubah Data
         </p>
@@ -871,39 +872,39 @@ export default function Home() {
               </span>
             </div>
 
-             {/* Manual Search in Matched State */}
-             <ManualSearchForm />
+            {/* Manual Search in Matched State */}
+            <ManualSearchForm />
           </div>
         )}
 
         {/* AMBIGUOUS / DUPLICATE STATE */}
         {pair.matchStatus === "ambiguous" && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 rounded-2xl p-4 flex flex-col gap-4">
-             <div>
-                <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
+            <div>
+              <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
                 ⚠️ Pilih salah satu ({pair.approvalData?.length} data):
-                </p>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+              </p>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                 {pair.approvalData?.map((choice, cIdx) => (
-                    <button
+                  <button
                     key={cIdx}
                     onClick={() => handleSelectApproval(index, choice)}
                     className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
-                    >
+                  >
                     <div className="text-xs">
-                        <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
-                        <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
+                      <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
+                      <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
                     </div>
                     <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                     </div>
-                    </button>
+                  </button>
                 ))}
-                </div>
+              </div>
             </div>
 
-             {/* Manual Search in Ambiguous State */}
-             <ManualSearchForm />
+            {/* Manual Search in Ambiguous State */}
+            <ManualSearchForm />
           </div>
         )}
 
@@ -931,7 +932,7 @@ export default function Home() {
                 but a generic Blue/Neutral search bar is fine too.
                 Actually, let's just use ManualSearchForm to ensure it's "bisa dicari by npsn manual lagi".
             */}
-             <ManualSearchForm />
+            <ManualSearchForm />
           </div>
         )}
       </div>
