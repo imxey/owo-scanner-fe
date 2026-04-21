@@ -23,12 +23,12 @@ interface ScanPair {
   ocrStatus?: "idle" | "processing" | "success" | "error";
   // New properties for approval status
   matchStatus?:
-  | "idle"
-  | "loading"
-  | "matched"
-  | "not-matched"
-  | "ambiguous"
-  | "error";
+    | "idle"
+    | "loading"
+    | "matched"
+    | "not-matched"
+    | "ambiguous"
+    | "error";
   approvalData?: ApprovalData[]; // Stores the list of potential matches
   selectedApproval?: ApprovalData; // Stores user-selected or auto-selected match
   isSaved?: boolean;
@@ -39,7 +39,10 @@ interface ScanPair {
 }
 
 // Helper to rotate base64 image
-const rotateImageBase64 = (base64: string, degrees: number): Promise<string> => {
+const rotateImageBase64 = (
+  base64: string,
+  degrees: number,
+): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (degrees === 0) return resolve(base64);
 
@@ -138,7 +141,7 @@ export default function Home() {
 
       // Find current image context
       const currentPair = scanResults.find(
-        (p) => p.front === previewImage || p.back === previewImage
+        (p) => p.front === previewImage || p.back === previewImage,
       );
 
       if (!currentPair) return;
@@ -151,7 +154,11 @@ export default function Home() {
       }
 
       // Navigate Right / D (Front -> Back)
-      if ((e.key === "ArrowRight" || e.key.toLowerCase() === "d") && isFront && currentPair.back) {
+      if (
+        (e.key === "ArrowRight" || e.key.toLowerCase() === "d") &&
+        isFront &&
+        currentPair.back
+      ) {
         setPreviewImage(currentPair.back);
       }
     };
@@ -178,9 +185,7 @@ export default function Home() {
       }
 
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/profiles`,
-        );
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/profiles`);
         if (!res.ok) throw new Error("Failed to fetch profiles");
         const data = await res.json();
         if (data.success && data.profiles && Array.isArray(data.profiles)) {
@@ -199,6 +204,17 @@ export default function Home() {
   }, []);
   const handleSave = async (index: number) => {
     const item = scanResults[index];
+
+    if (item.isSaving || item.isSaved) return;
+
+    if (item.matchStatus !== "matched" || !item.selectedApproval) {
+      Swal.fire({
+        icon: "warning",
+        title: "Belum Diverifikasi",
+        text: "Silakan verifikasi data BAPP terlebih dahulu!",
+      });
+      return;
+    }
 
     // Cek apakah data sudah diverifikasi
     if (item.matchStatus !== "matched" || !item.selectedApproval) {
@@ -229,8 +245,14 @@ export default function Home() {
 
     try {
       // Apply rotation if needed before sending
-      const processedFront = await rotateImageBase64(item.back || "", item.backRotation || 0);
-      const processedBack = await rotateImageBase64(item.front || "", item.frontRotation || 0);
+      const processedFront = await rotateImageBase64(
+        item.back || "",
+        item.backRotation || 0,
+      );
+      const processedBack = await rotateImageBase64(
+        item.front || "",
+        item.frontRotation || 0,
+      );
 
       const payload = {
         doc_name: item.docName || `Dokumen #${index + 1}`,
@@ -243,14 +265,11 @@ export default function Home() {
         kode: item.selectedApproval.kode, // Added Kode
       };
 
-      const res = await fetch(
-        `${import.meta.env.VITE_SAVE_API_URL}/save`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
+      const res = await fetch(`${import.meta.env.VITE_SAVE_API_URL}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
       const result = await res.json();
 
@@ -391,7 +410,9 @@ export default function Home() {
     if (!identifier) return { status: "idle", data: [] };
 
     try {
-      const param = isNpsn ? `npsn=${encodeURIComponent(identifier)}` : `no_bapp=${encodeURIComponent(identifier)}`;
+      const param = isNpsn
+        ? `npsn=${encodeURIComponent(identifier)}`
+        : `no_bapp=${encodeURIComponent(identifier)}`;
       const res = await fetch(
         `${import.meta.env.VITE_APPROVAL_API_URL}/is-approved?${param}`,
       );
@@ -591,7 +612,7 @@ export default function Home() {
           text: "Dokumen telah dihapus.",
           icon: "success",
           timer: 1500,
-          showConfirmButton: false
+          showConfirmButton: false,
         });
 
         // If no items left, go back to start?
@@ -622,7 +643,7 @@ export default function Home() {
           text: "Semua hasil scan telah dihapus.",
           icon: "success",
           timer: 1500,
-          showConfirmButton: false
+          showConfirmButton: false,
         });
       }
     });
@@ -678,10 +699,7 @@ export default function Home() {
   };
 
   // --- DRAG AND DROP HANDLERS ---
-  const handleDragStart = (
-    index: number,
-    property: "front" | "back"
-  ) => {
+  const handleDragStart = (index: number, property: "front" | "back") => {
     setDraggedItem({ index, property });
   };
 
@@ -705,7 +723,8 @@ export default function Home() {
     const updated = [...scanResults];
 
     // Helper to get rotation key
-    const getRotKey = (p: "front" | "back") => p === "front" ? "frontRotation" : "backRotation";
+    const getRotKey = (p: "front" | "back") =>
+      p === "front" ? "frontRotation" : "backRotation";
 
     if (sourceIndex === index) {
       // SWAP WITHIN SAME CARD
@@ -732,7 +751,7 @@ export default function Home() {
       }
 
       // Swap Rotations
-      // Since frontRotation and backRotation are both number | undefined, dynamic access is safe enough here, 
+      // Since frontRotation and backRotation are both number | undefined, dynamic access is safe enough here,
       // but let's be explicit to avoid any confusion or future lints.
       if (sourceProperty === "front") item.frontRotation = targetRot;
       else item.backRotation = targetRot;
@@ -830,7 +849,9 @@ export default function Home() {
           <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-4 flex flex-col min-h-[160px]">
             {/* School Name - Primary Info */}
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nama Sekolah</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                Nama Sekolah
+              </p>
               <p className="text-xl md:text-2xl font-black text-slate-800 dark:text-white leading-tight">
                 {pair.selectedApproval.nama_sekolah || "-"}
               </p>
@@ -838,7 +859,9 @@ export default function Home() {
 
             {/* NPSN - Secondary Info */}
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">NPSN</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                NPSN
+              </p>
               <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
                 {pair.selectedApproval.npsn}
               </p>
@@ -846,7 +869,9 @@ export default function Home() {
 
             {/* SN BAPP - Tertiary Info */}
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">SN Dokumen</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                SN Dokumen
+              </p>
               <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
                 {pair.selectedApproval.sn_bapp}
               </p>
@@ -854,18 +879,45 @@ export default function Home() {
 
             {/* Status Pill */}
             <div>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${pair.selectedApproval.hasil_cek === "sesuai"
-                ? "bg-green-100 text-green-700 border border-green-200"
-                : "bg-red-100 text-red-700 border border-red-200"
-                }`}>
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${
+                  pair.selectedApproval.hasil_cek === "sesuai"
+                    ? "bg-green-100 text-green-700 border border-green-200"
+                    : "bg-red-100 text-red-700 border border-red-200"
+                }`}
+              >
                 {pair.selectedApproval.hasil_cek === "sesuai" ? (
                   <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={3}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
                     SESUAI
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={3}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
                     TIDAK SESUAI
                   </>
                 )}
@@ -892,11 +944,27 @@ export default function Home() {
                     className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
                   >
                     <div className="text-xs">
-                      <p className="font-black text-slate-700 dark:text-slate-200">{choice.npsn}</p>
-                      <p className="font-mono text-slate-500 truncate w-32">{choice.sn_bapp}</p>
+                      <p className="font-black text-slate-700 dark:text-slate-200">
+                        {choice.npsn}
+                      </p>
+                      <p className="font-mono text-slate-500 truncate w-32">
+                        {choice.sn_bapp}
+                      </p>
                     </div>
                     <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
                     </div>
                   </button>
                 ))}
@@ -913,13 +981,24 @@ export default function Home() {
           <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-100 dark:border-red-900/30 p-5 rounded-2xl space-y-3 flex flex-col">
             <div>
               <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-1">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
                 Data BAPP Tidak Ditemukan
               </p>
               <p className="text-[10px] text-red-500/80 leading-tight">
-                Sistem tidak menemukan kecocokan otomatis. Silakan cari manual menggunakan NPSN.
+                Sistem tidak menemukan kecocokan otomatis. Silakan cari manual
+                menggunakan NPSN.
               </p>
             </div>
 
@@ -943,8 +1022,9 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex items-center justify-center p-4">
       {/* Main Card Container with Dynamic Width */}
       <div
-        className={`transition-all duration-500 ease-in-out ${viewMode === "start" ? "w-full max-w-xl" : "w-full max-w-[95%]"
-          } bg-white dark:bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-slate-800`}
+        className={`transition-all duration-500 ease-in-out ${
+          viewMode === "start" ? "w-full max-w-xl" : "w-full max-w-[95%]"
+        } bg-white dark:bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-slate-800`}
       >
         {/* Header */}
         <div className="bg-slate-800 p-6 text-white flex justify-between items-center">
@@ -1084,12 +1164,13 @@ export default function Home() {
               {/* Status Indicator */}
               {status.msg && (
                 <div
-                  className={`p-4 rounded-lg text-sm font-medium border ${status.type === "error"
-                    ? "bg-red-50 text-red-700 border-red-200"
-                    : status.type === "success"
-                      ? "bg-green-50 text-green-700 border-green-200"
-                      : "bg-blue-50 text-blue-700 border-blue-200"
-                    }`}
+                  className={`p-4 rounded-lg text-sm font-medium border ${
+                    status.type === "error"
+                      ? "bg-red-50 text-red-700 border-red-200"
+                      : status.type === "success"
+                        ? "bg-green-50 text-green-700 border-green-200"
+                        : "bg-blue-50 text-blue-700 border-blue-200"
+                  }`}
                 >
                   {status.msg}
                 </div>
@@ -1099,10 +1180,11 @@ export default function Home() {
               <button
                 onClick={handleScan}
                 disabled={loading}
-                className={`w-full py-4 px-6 rounded-lg font-bold text-white shadow-md transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 ${loading
-                  ? "bg-gray-400 cursor-not-allowed opacity-75"
-                  : "bg-blue-600 hover:bg-blue-700"
-                  }`}
+                className={`w-full py-4 px-6 rounded-lg font-bold text-white shadow-md transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 ${
+                  loading
+                    ? "bg-gray-400 cursor-not-allowed opacity-75"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
               >
                 {loading ? (
                   <>
@@ -1174,8 +1256,17 @@ export default function Home() {
                     onClick={handleClearAll}
                     className="px-4 py-2 bg-red-100/50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-bold border border-red-200 transition-colors flex items-center gap-2"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                     Hapus Semua
                   </button>
@@ -1254,14 +1345,15 @@ export default function Home() {
                 {scanResults.map((pair, index) => (
                   <div
                     key={index}
-                    className={`relative p-6 rounded-2xl border-2 transition-all duration-500 shadow-sm ${pair.isSaved
-                      ? "bg-indigo-50/30 border-indigo-200 dark:bg-indigo-950/10 dark:border-indigo-800 ring-4 ring-indigo-500/10"
-                      : pair.matchStatus === "matched"
-                        ? pair.selectedApproval?.hasil_cek === "sesuai"
-                          ? "bg-green-50/30 border-green-200 dark:bg-green-950/10 dark:border-green-800"
-                          : "bg-red-50/30 border-red-200 dark:bg-red-950/10 dark:border-red-800"
-                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-                      }`}
+                    className={`relative p-6 rounded-2xl border-2 transition-all duration-500 shadow-sm ${
+                      pair.isSaved
+                        ? "bg-indigo-50/30 border-indigo-200 dark:bg-indigo-950/10 dark:border-indigo-800 ring-4 ring-indigo-500/10"
+                        : pair.matchStatus === "matched"
+                          ? pair.selectedApproval?.hasil_cek === "sesuai"
+                            ? "bg-green-50/30 border-green-200 dark:bg-green-950/10 dark:border-green-800"
+                            : "bg-red-50/30 border-red-200 dark:bg-red-950/10 dark:border-red-800"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                    }`}
                   >
                     {/* Badge Sudah Simpan */}
                     {pair.isSaved && (
@@ -1280,7 +1372,9 @@ export default function Home() {
                           <input
                             type="text"
                             value={pair.docName || `Dokumen #${index + 1}`}
-                            onChange={(e) => handleNameChange(index, e.target.value)}
+                            onChange={(e) =>
+                              handleNameChange(index, e.target.value)
+                            }
                             className="block w-full font-black text-xl text-slate-800 dark:text-slate-100 bg-transparent border-b-2 border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none transition-all py-1"
                           />
                           <div className="flex gap-3 items-center mt-1">
@@ -1305,8 +1399,18 @@ export default function Home() {
                           className="p-2 rounded-xl hover:bg-red-500 hover:text-white text-red-500 transition-all"
                           title="Hapus"
                         >
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
                           </svg>
                         </button>
                         <button
@@ -1314,28 +1418,59 @@ export default function Home() {
                           disabled={pair.ocrStatus === "processing"}
                           className="p-2 rounded-xl hover:bg-amber-500 hover:text-white text-amber-500 transition-all disabled:opacity-30"
                         >
-                          <svg className={`w-5 h-5 ${pair.ocrStatus === "processing" ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          <svg
+                            className={`w-5 h-5 ${pair.ocrStatus === "processing" ? "animate-spin" : ""}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                            />
                           </svg>
                         </button>
                         <div className="w-px h-6 bg-slate-300 dark:bg-slate-600 mx-1" />
                         <button
                           onClick={() => handleSave(index)}
-                          disabled={pair.isSaved || pair.matchStatus !== "matched" || pair.isSaving}
-                          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black transition-all active:scale-95 shadow-md ${pair.isSaved
-                            ? "bg-green-500 text-white cursor-default"
-                            : pair.isSaving
-                              ? "bg-indigo-400 text-white cursor-wait"
-                              : pair.matchStatus === "matched"
-                                ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
-                                : "bg-slate-300 text-slate-500 cursor-not-allowed"
-                            }`}
+                          disabled={
+                            pair.isSaved ||
+                            pair.matchStatus !== "matched" ||
+                            pair.isSaving
+                          }
+                          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black transition-all active:scale-95 shadow-md ${
+                            pair.isSaved
+                              ? "bg-green-500 text-white cursor-default"
+                              : pair.isSaving
+                                ? "bg-indigo-400 text-white cursor-wait"
+                                : pair.matchStatus === "matched"
+                                  ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
+                                  : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                          }`}
                         >
                           {pair.isSaving ? (
                             <>
-                              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              <svg
+                                className="animate-spin h-4 w-4 text-white"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                ></circle>
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
                               </svg>
                               Menyimpan...
                             </>
@@ -1358,17 +1493,31 @@ export default function Home() {
                       {/* Right: Image Preview Grid */}
                       <div className="lg:col-span-8 grid grid-cols-2 gap-4 relative">
                         {[
-                          { label: "Depan", property: "back" as const, src: pair.back, rot: pair.backRotation || 0 },
-                          { label: "Belakang", property: "front" as const, src: pair.front, rot: pair.frontRotation || 0 },
+                          {
+                            label: "Depan",
+                            property: "back" as const,
+                            src: pair.back,
+                            rot: pair.backRotation || 0,
+                          },
+                          {
+                            label: "Belakang",
+                            property: "front" as const,
+                            src: pair.front,
+                            rot: pair.frontRotation || 0,
+                          },
                         ].map((img, i) => (
                           <div
                             key={i}
-                            className={`group relative transition-all duration-200 ${draggedItem?.index === index && draggedItem?.property === img.property
-                              ? "opacity-40 scale-95"
-                              : "opacity-100"
-                              }`}
+                            className={`group relative transition-all duration-200 ${
+                              draggedItem?.index === index &&
+                              draggedItem?.property === img.property
+                                ? "opacity-40 scale-95"
+                                : "opacity-100"
+                            }`}
                             draggable
-                            onDragStart={() => handleDragStart(index, img.property)}
+                            onDragStart={() =>
+                              handleDragStart(index, img.property)
+                            }
                             onDragOver={handleDragOver}
                             onDrop={() => handleDrop(index, img.property)}
                             onDragEnd={handleDragEnd}
@@ -1382,19 +1531,48 @@ export default function Home() {
                             {/* Rotate Button */}
                             {img.src && (
                               <button
-                                onClick={() => handleRotate(index, img.property)}
+                                onClick={() =>
+                                  handleRotate(index, img.property)
+                                }
                                 disabled={pair.isRotating}
                                 className="absolute top-2 right-2 z-20 bg-black/50 hover:bg-black/70 text-white p-1.5 rounded-full backdrop-blur-md transition-colors opacity-0 group-hover:opacity-100 disabled:cursor-wait disabled:opacity-100"
                                 title="Putar Gambar 90° (Permanen)"
                               >
                                 {pair.isRotating ? (
-                                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  <svg
+                                    className="animate-spin h-4 w-4"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <circle
+                                      className="opacity-25"
+                                      cx="12"
+                                      cy="12"
+                                      r="10"
+                                      stroke="currentColor"
+                                      strokeWidth="4"
+                                    ></circle>
+                                    <path
+                                      className="opacity-75"
+                                      fill="currentColor"
+                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                    ></path>
                                   </svg>
                                 ) : (
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth={2}
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                    />
                                   </svg>
                                 )}
                               </button>
@@ -1411,8 +1589,18 @@ export default function Home() {
                                 />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs flex-col gap-2">
-                                  <svg className="w-8 h-8 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  <svg
+                                    className="w-8 h-8 opacity-20"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                    />
                                   </svg>
                                   <span>Kosong (Drop Here)</span>
                                 </div>
@@ -1428,7 +1616,9 @@ export default function Home() {
                         {pair.isSaved && pair.selectedApproval?.kode && (
                           <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
                             <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-[0_20px_50px_rgba(79,70,229,0.4)] border-4 border-white dark:border-slate-900 transform -rotate-3 animate-in zoom-in duration-500 flex flex-col items-center">
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-80">Kode Dokumen</span>
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-80">
+                                Kode Dokumen
+                              </span>
                               <span className="text-5xl font-black tracking-tighter drop-shadow-md">
                                 {pair.selectedApproval.kode}
                               </span>
@@ -1446,99 +1636,136 @@ export default function Home() {
       </div>
 
       {/* Image Preview Modal */}
-      {
-        previewImage && (
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
+          onClick={() => setPreviewImage(null)}
+        >
           <div
-            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
-            onClick={() => setPreviewImage(null)}
+            className="relative w-full h-full flex flex-col items-center justify-center p-4"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="relative w-full h-full flex flex-col items-center justify-center p-4"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Floating Info Panel (Left) using Render Function */}
-              {(() => {
-                const currentIndex = scanResults.findIndex(
-                  (p) => p.front === previewImage || p.back === previewImage
+            {/* Floating Info Panel (Left) using Render Function */}
+            {(() => {
+              const currentIndex = scanResults.findIndex(
+                (p) => p.front === previewImage || p.back === previewImage,
+              );
+              const currentPair = scanResults[currentIndex];
+
+              if (currentPair) {
+                return (
+                  <div className="absolute top-1/2 -translate-y-1/2 left-4 z-50 w-80 max-h-[80vh] overflow-y-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 p-4 animate-in slide-in-from-left-4 fade-in duration-300">
+                    {renderInfoPanel(currentPair, currentIndex)}
+                  </div>
                 );
-                const currentPair = scanResults[currentIndex];
+              }
+              return null;
+            })()}
 
-                if (currentPair) {
-                  return (
-                    <div className="absolute top-1/2 -translate-y-1/2 left-4 z-50 w-80 max-h-[80vh] overflow-y-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 p-4 animate-in slide-in-from-left-4 fade-in duration-300">
-                      {renderInfoPanel(currentPair, currentIndex)}
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* Close Button Top Right */}
-              <button
-                onClick={() => setPreviewImage(null)}
-                className="absolute top-4 right-4 z-50 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-all backdrop-blur-sm"
+            {/* Close Button Top Right */}
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-4 right-4 z-50 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-all backdrop-blur-sm"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-8 w-8"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
 
-              <TransformWrapper
-                initialScale={1}
-                minScale={0.5}
-                maxScale={4}
-                centerOnInit
-              >
-                {({ zoomIn, zoomOut, resetTransform }) => (
-                  <>
-                    {/* Toolbar Controls */}
-                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-black/50 backdrop-blur-md border border-white/10 px-6 py-3 rounded-full shadow-2xl">
-                      <button
-                        onClick={() => zoomOut()}
-                        className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
-                        title="Zoom Out"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => resetTransform()}
-                        className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-indigo-500/30"
-                        title="Reset Zoom"
-                      >
-                        Reset
-                      </button>
-                      <button
-                        onClick={() => zoomIn()}
-                        className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
-                        title="Zoom In"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    {/* Image Viewport */}
-                    <TransformComponent
-                      wrapperClass="!w-full !h-full flex items-center justify-center"
-                      wrapperStyle={{ width: "100%", height: "100%" }}
-                      contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+            <TransformWrapper
+              initialScale={1}
+              minScale={0.5}
+              maxScale={4}
+              centerOnInit
+            >
+              {({ zoomIn, zoomOut, resetTransform }) => (
+                <>
+                  {/* Toolbar Controls */}
+                  <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-black/50 backdrop-blur-md border border-white/10 px-6 py-3 rounded-full shadow-2xl">
+                    <button
+                      onClick={() => zoomOut()}
+                      className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
+                      title="Zoom Out"
                     >
-                      <img
-                        src={previewImage}
-                        alt="Preview"
-                        className="max-h-[85vh] max-w-[90vw] w-auto h-auto object-contain rounded-lg shadow-2xl"
-                      />
-                    </TransformComponent>
-                  </>
-                )}
-              </TransformWrapper>
-            </div>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M20 12H4"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => resetTransform()}
+                      className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-indigo-500/30"
+                      title="Reset Zoom"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={() => zoomIn()}
+                      className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all active:scale-95"
+                      title="Zoom In"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Image Viewport */}
+                  <TransformComponent
+                    wrapperClass="!w-full !h-full flex items-center justify-center"
+                    wrapperStyle={{ width: "100%", height: "100%" }}
+                    contentStyle={{
+                      width: "100%",
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <img
+                      src={previewImage}
+                      alt="Preview"
+                      className="max-h-[85vh] max-w-[90vw] w-auto h-auto object-contain rounded-lg shadow-2xl"
+                    />
+                  </TransformComponent>
+                </>
+              )}
+            </TransformWrapper>
           </div>
-        )
-      }
-    </div >
+        </div>
+      )}
+    </div>
   );
 }
