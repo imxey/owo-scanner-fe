@@ -23,12 +23,12 @@ interface ScanPair {
   ocrStatus?: "idle" | "processing" | "success" | "error";
   // New properties for approval status
   matchStatus?:
-    | "idle"
-    | "loading"
-    | "matched"
-    | "not-matched"
-    | "ambiguous"
-    | "error";
+  | "idle"
+  | "loading"
+  | "matched"
+  | "not-matched"
+  | "ambiguous"
+  | "error";
   approvalData?: ApprovalData[]; // Stores the list of potential matches
   selectedApproval?: ApprovalData; // Stores user-selected or auto-selected match
   isSaved?: boolean;
@@ -880,11 +880,10 @@ export default function Home() {
             {/* Status Pill */}
             <div>
               <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${
-                  pair.selectedApproval.hasil_cek === "sesuai"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${pair.selectedApproval.hasil_cek === "sesuai"
                     ? "bg-green-100 text-green-700 border border-green-200"
                     : "bg-red-100 text-red-700 border border-red-200"
-                }`}
+                  }`}
               >
                 {pair.selectedApproval.hasil_cek === "sesuai" ? (
                   <>
@@ -1014,6 +1013,43 @@ export default function Home() {
             <ManualSearchForm />
           </div>
         )}
+
+        {/* IDLE / ERROR OCR STATE */}
+        {pair.matchStatus === "idle" && (
+          <div className="bg-slate-50 dark:bg-slate-900/50 border-2 border-slate-200 dark:border-slate-800 p-5 rounded-2xl space-y-3 flex flex-col h-full">
+            <div>
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-2 mb-1">
+                {pair.ocrStatus === "error" ? (
+                  <>
+                    <svg
+                      className="w-4 h-4 text-amber-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                      />
+                    </svg>
+                    Gagal membaca dari OCR
+                  </>
+                ) : (
+                  "Belum Diperiksa"
+                )}
+              </p>
+              <p className="text-[10px] text-slate-500/80 leading-tight">
+                {pair.ocrStatus === "error"
+                  ? "Sistem gagal menemukan nomor BAPP. Silakan lakukan pencarian manual menggunakan NPSN."
+                  : "Silakan lakukan pencarian manual menggunakan NPSN."}
+              </p>
+            </div>
+
+            <ManualSearchForm />
+          </div>
+        )}
       </div>
     );
   };
@@ -1022,9 +1058,8 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex items-center justify-center p-4">
       {/* Main Card Container with Dynamic Width */}
       <div
-        className={`transition-all duration-500 ease-in-out ${
-          viewMode === "start" ? "w-full max-w-xl" : "w-full max-w-[95%]"
-        } bg-white dark:bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-slate-800`}
+        className={`transition-all duration-500 ease-in-out ${viewMode === "start" ? "w-full max-w-xl" : "w-full max-w-[95%]"
+          } bg-white dark:bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-slate-800`}
       >
         {/* Header */}
         <div className="bg-slate-800 p-6 text-white flex justify-between items-center">
@@ -1164,13 +1199,12 @@ export default function Home() {
               {/* Status Indicator */}
               {status.msg && (
                 <div
-                  className={`p-4 rounded-lg text-sm font-medium border ${
-                    status.type === "error"
+                  className={`p-4 rounded-lg text-sm font-medium border ${status.type === "error"
                       ? "bg-red-50 text-red-700 border-red-200"
                       : status.type === "success"
                         ? "bg-green-50 text-green-700 border-green-200"
                         : "bg-blue-50 text-blue-700 border-blue-200"
-                  }`}
+                    }`}
                 >
                   {status.msg}
                 </div>
@@ -1180,11 +1214,10 @@ export default function Home() {
               <button
                 onClick={handleScan}
                 disabled={loading}
-                className={`w-full py-4 px-6 rounded-lg font-bold text-white shadow-md transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 ${
-                  loading
+                className={`w-full py-4 px-6 rounded-lg font-bold text-white shadow-md transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 ${loading
                     ? "bg-gray-400 cursor-not-allowed opacity-75"
                     : "bg-blue-600 hover:bg-blue-700"
-                }`}
+                  }`}
               >
                 {loading ? (
                   <>
@@ -1345,15 +1378,14 @@ export default function Home() {
                 {scanResults.map((pair, index) => (
                   <div
                     key={index}
-                    className={`relative p-6 rounded-2xl border-2 transition-all duration-500 shadow-sm ${
-                      pair.isSaved
+                    className={`relative p-6 rounded-2xl border-2 transition-all duration-500 shadow-sm ${pair.isSaved
                         ? "bg-indigo-50/30 border-indigo-200 dark:bg-indigo-950/10 dark:border-indigo-800 ring-4 ring-indigo-500/10"
                         : pair.matchStatus === "matched"
                           ? pair.selectedApproval?.hasil_cek === "sesuai"
                             ? "bg-green-50/30 border-green-200 dark:bg-green-950/10 dark:border-green-800"
                             : "bg-red-50/30 border-red-200 dark:bg-red-950/10 dark:border-red-800"
                           : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-                    }`}
+                      }`}
                   >
                     {/* Badge Sudah Simpan */}
                     {pair.isSaved && (
@@ -1440,15 +1472,14 @@ export default function Home() {
                             pair.matchStatus !== "matched" ||
                             pair.isSaving
                           }
-                          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black transition-all active:scale-95 shadow-md ${
-                            pair.isSaved
+                          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black transition-all active:scale-95 shadow-md ${pair.isSaved
                               ? "bg-green-500 text-white cursor-default"
                               : pair.isSaving
                                 ? "bg-indigo-400 text-white cursor-wait"
                                 : pair.matchStatus === "matched"
                                   ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
                                   : "bg-slate-300 text-slate-500 cursor-not-allowed"
-                          }`}
+                            }`}
                         >
                           {pair.isSaving ? (
                             <>
@@ -1508,12 +1539,11 @@ export default function Home() {
                         ].map((img, i) => (
                           <div
                             key={i}
-                            className={`group relative transition-all duration-200 ${
-                              draggedItem?.index === index &&
-                              draggedItem?.property === img.property
+                            className={`group relative transition-all duration-200 ${draggedItem?.index === index &&
+                                draggedItem?.property === img.property
                                 ? "opacity-40 scale-95"
                                 : "opacity-100"
-                            }`}
+                              }`}
                             draggable
                             onDragStart={() =>
                               handleDragStart(index, img.property)
