@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 
 interface DashboardStat {
@@ -21,8 +19,12 @@ export default function Dashboard() {
 
   // Work Stats State
   const [workStats, setWorkStats] = useState<WorkStat | null>(null);
+
   // Default to today YYYY-MM-DD
-  const [workDate, setWorkDate] = useState<string>(() => {
+  const [startDate, setStartDate] = useState<string>(() => {
+    return new Date().toISOString().split("T")[0];
+  });
+  const [endDate, setEndDate] = useState<string>(() => {
     return new Date().toISOString().split("T")[0];
   });
 
@@ -62,16 +64,15 @@ export default function Dashboard() {
     fetchStats();
   }, []);
 
-  // Fetch Work Stats when workDate changes
+  // Fetch Work Stats when startDate or endDate changes
   useEffect(() => {
     const fetchWorkStats = async () => {
       try {
         const apiUrl = import.meta.env.VITE_SAVE_API_URL;
         if (!apiUrl) return;
 
-        // Use same date for start and end to get single day stats
         const res = await fetch(
-          `${apiUrl}/work-stats?start_date=${workDate}&end_date=${workDate}`,
+          `${apiUrl}/work-stats?start_date=${startDate}&end_date=${endDate}`,
         );
         if (!res.ok) return;
 
@@ -84,7 +85,7 @@ export default function Dashboard() {
       }
     };
     fetchWorkStats();
-  }, [workDate]);
+  }, [startDate, endDate]);
 
   // Calculate Total Row manually
   const totalStat: DashboardStat = stats.reduce(
@@ -201,13 +202,25 @@ export default function Dashboard() {
             </svg>
             Laporan Harian
           </h2>
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={workDate}
-              onChange={(e) => setWorkDate(e.target.value)}
-              className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200"
-            />
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Dari Tanggal:</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Sampai Tanggal:</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200"
+              />
+            </div>
           </div>
         </div>
 
@@ -220,11 +233,11 @@ export default function Dashboard() {
               {workStats ? workStats.scanned.toLocaleString() : "..."}
             </p>
             <p className="text-xs text-slate-500 mt-2">
-              Total dokumen berhasil di-scan pada tanggal {workDate}
+              Total dokumen berhasil di-scan dari tanggal {startDate} sampai {endDate}
             </p>
           </div>
         </div>
-      </div>
+      </div >
 
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden backdrop-blur-sm bg-opacity-90 dark:bg-opacity-90">
         <div className="overflow-x-auto">
