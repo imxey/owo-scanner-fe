@@ -61,7 +61,7 @@ export default function RecordsPage() {
         const filename = path.split('\\').pop()?.split('/').pop();
         if (filename) {
             const apiUrl = import.meta.env.VITE_SAVE_API_URL;
-            const pdfUrl = `${apiUrl}/scans/${filename}`;
+            const pdfUrl = `${apiUrl}/scans/${filename}?t=${new Date().getTime()}`;
             window.open(pdfUrl, '_blank');
         } else {
             alert("Invalid file path");

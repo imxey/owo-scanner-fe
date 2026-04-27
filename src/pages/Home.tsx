@@ -4,6 +4,11 @@ import { useState, useEffect } from "react";
 import Tesseract from "tesseract.js";
 import Swal from "sweetalert2";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { pdfjs } from "react-pdf";
+
+// Configure web worker for react-pdf
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
 
 // --- Interface Data ---
 interface ApprovalData {
@@ -95,8 +100,13 @@ export default function Home() {
     msg: "",
   });
 
-  // State for Image Preview Modal
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  // State for PDF Compare Mode
+  const [comparePdfUrl, setComparePdfUrl] = useState<string | null>(null);
+  const [compareIndex, setCompareIndex] = useState<number | null>(null);
+
+  // PDF pages rendered as images
+  const [pdfPageImages, setPdfPageImages] = useState<string[]>([]);
+  const [pdfLoading, setPdfLoading] = useState<boolean>(false);
 
   // Drag and Drop State
   const [draggedItem, setDraggedItem] = useState<{
@@ -105,9 +115,12 @@ export default function Home() {
   } | null>(null);
 
   // View Mode State
-  const [viewMode, setViewMode] = useState<"start" | "results">("start");
+  const [viewMode, setViewMode] = useState<"start" | "results" | "compare">("start");
 
   const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  // Preview Image Modal State
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Initialize theme
   useEffect(() => {
@@ -173,6 +186,63 @@ export default function Home() {
     localStorage.setItem("theme", newTheme);
     document.documentElement.classList.toggle("dark", newTheme === "dark");
   };
+
+  // Convert PDF pages to images when comparePdfUrl changes
+  useEffect(() => {
+    if (!comparePdfUrl) {
+      setPdfPageImages([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const renderPdfToImages = async () => {
+      setPdfLoading(true);
+      setPdfPageImages([]);
+
+      try {
+        const loadingTask = pdfjs.getDocument(comparePdfUrl);
+        const pdf = await loadingTask.promise;
+        const images: string[] = [];
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          if (cancelled) return;
+          const page = await pdf.getPage(i);
+          const scale = 2; // High quality
+          const viewport = page.getViewport({ scale });
+
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext("2d");
+
+          if (ctx) {
+            await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+            images.push(canvas.toDataURL("image/jpeg", 0.92));
+          }
+        }
+
+        if (!cancelled) {
+          setPdfPageImages(images);
+        }
+      } catch (err) {
+        console.error("Failed to render PDF to images:", err);
+        if (!cancelled) {
+          setPdfPageImages([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setPdfLoading(false);
+        }
+      }
+    };
+
+    renderPdfToImages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [comparePdfUrl]);
 
   // Fetch profiles on mount
   useEffect(() => {
@@ -294,11 +364,29 @@ export default function Home() {
           showConfirmButton: false,
         });
       } else {
-        Swal.fire({
-          icon: "error",
-          title: "Gagal Menyimpan",
-          text: result.message,
-        });
+        if (result.message === "Data dengan NPSN ini sudah ada! NPSN atau SN BAPP mungkin sudah terdaftar.") {
+          const apiUrl = import.meta.env.VITE_SAVE_API_URL;
+          const pdfFilename = `${item.selectedApproval!.npsn}_${item.selectedApproval!.sn_bapp}.pdf`;
+          const pdfUrl = `${apiUrl}/scans/${encodeURIComponent(pdfFilename)}?t=${new Date().getTime()}`;
+          Swal.fire({
+            icon: "info",
+            title: "Data Sudah Ada",
+            text: "Mengalihkan ke halaman pembandingan untuk melihat file PDF yang sudah ada dengan yang akan disimpan.",
+            timer: 2500,
+            showConfirmButton: false,
+          });
+
+          setCompareIndex(index);
+          setComparePdfUrl(pdfUrl);
+          setPdfPageImages([]);
+          setViewMode("compare");
+        } else {
+          Swal.fire({
+            icon: "error",
+            title: "Gagal Menyimpan",
+            text: result.message,
+          });
+        }
       }
     } catch (error) {
       console.error("Save error:", error);
@@ -465,33 +553,44 @@ export default function Home() {
         updatedResults[i],
       );
 
-      updatedResults[i].backText = text;
-      if (detectedName) {
-        updatedResults[i].docName = detectedName;
-        updatedResults[i].ocrStatus = "success";
-      } else {
-        updatedResults[i].docName = `Dokumen #${i + 1}`;
-        updatedResults[i].ocrStatus = "error"; // Failed to extract name
-        updatedResults[i].matchStatus = "idle";
-      }
-
-      setScanResults([...updatedResults]); // Update progressive
+      setScanResults((prev) => {
+        const current = [...prev];
+        if (current[i]) {
+          current[i] = {
+            ...current[i],
+            backText: text,
+            docName: detectedName ? detectedName : `Dokumen #${i + 1}`,
+            ocrStatus: detectedName ? "success" : "error",
+            matchStatus: detectedName ? "idle" : "idle",
+          };
+        }
+        return current;
+      });
 
       // If we have a name, trigger approval check
-      if (
-        updatedResults[i].docName &&
-        updatedResults[i].ocrStatus === "success"
-      ) {
-        updatedResults[i].matchStatus = "loading";
-        setScanResults([...updatedResults]);
+      if (detectedName) {
+        setScanResults((prev) => {
+          const current = [...prev];
+          if (current[i]) {
+            current[i] = { ...current[i], matchStatus: "loading" };
+          }
+          return current;
+        });
 
-        const checkDetails = await checkApproval(updatedResults[i].docName!);
+        const checkDetails = await checkApproval(detectedName);
 
-        updatedResults[i].matchStatus = checkDetails.status;
-        updatedResults[i].approvalData = checkDetails.data;
-        updatedResults[i].selectedApproval = checkDetails.selected;
-
-        setScanResults([...updatedResults]);
+        setScanResults((prev) => {
+          const current = [...prev];
+          if (current[i]) {
+            current[i] = {
+              ...current[i],
+              matchStatus: checkDetails.status,
+              approvalData: checkDetails.data,
+              selectedApproval: checkDetails.selected,
+            };
+          }
+          return current;
+        });
       }
     }
 
@@ -508,47 +607,65 @@ export default function Home() {
     });
 
     // Set individual item status to processing
-    const updatedResults = [...scanResults];
-    updatedResults[index].ocrStatus = "processing";
-    setScanResults(updatedResults);
+    setScanResults((prev) => {
+      const current = [...prev];
+      if (current[index]) {
+        current[index] = { ...current[index], ocrStatus: "processing" };
+      }
+      return current;
+    });
 
-    const { text, detectedName } = await processSingleItemOcr(
-      updatedResults[index],
-    );
+    const itemToProcess = scanResults[index];
+    const { text, detectedName } = await processSingleItemOcr(itemToProcess);
 
-    updatedResults[index].backText = text;
+    setScanResults((prev) => {
+      const current = [...prev];
+      if (current[index]) {
+        current[index] = {
+          ...current[index],
+          backText: text,
+          docName: detectedName ? detectedName : current[index].docName,
+          ocrStatus: detectedName ? "success" : "error",
+          matchStatus: detectedName ? "idle" : "idle",
+        };
+      }
+      return current;
+    });
+
     if (detectedName) {
-      updatedResults[index].docName = detectedName;
-      updatedResults[index].ocrStatus = "success";
       setStatus({
         type: "success",
         msg: `✅ OCR Ulang Berhasil! Nama terdeteksi: ${detectedName}`,
       });
+
+      setScanResults((prev) => {
+        const current = [...prev];
+        if (current[index]) {
+          current[index] = { ...current[index], matchStatus: "loading" };
+        }
+        return current;
+      });
+
+      const checkDetails = await checkApproval(detectedName);
+
+      setScanResults((prev) => {
+        const current = [...prev];
+        if (current[index]) {
+          current[index] = {
+            ...current[index],
+            matchStatus: checkDetails.status,
+            approvalData: checkDetails.data,
+            selectedApproval: checkDetails.selected,
+          };
+        }
+        return current;
+      });
     } else {
-      updatedResults[index].ocrStatus = "error";
       setStatus({
         type: "error",
         msg: `⚠️ OCR Ulang Selesai, tapi nomor tidak ditemukan.`,
       });
-      updatedResults[index].matchStatus = "idle";
     }
-
-    setScanResults([...updatedResults]);
-
-    // Post-retry approval check
-    if (detectedName) {
-      updatedResults[index].matchStatus = "loading";
-      setScanResults([...updatedResults]);
-
-      const checkDetails = await checkApproval(detectedName);
-      updatedResults[index].matchStatus = checkDetails.status;
-      updatedResults[index].approvalData = checkDetails.data;
-      updatedResults[index].selectedApproval = checkDetails.selected;
-
-      setScanResults([...updatedResults]);
-    }
-
-    setScanResults(updatedResults);
   };
 
   const handleNameChange = (index: number, newName: string) => {
@@ -650,9 +767,9 @@ export default function Home() {
   };
 
   const handleRotate = async (index: number, property: "front" | "back") => {
-    // Prevent multiple clicks
     if (scanResults[index].isRotating) return;
 
+    // 1. Set loading supaya user gak klik berkali-kali
     setScanResults((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], isRotating: true };
@@ -661,45 +778,38 @@ export default function Home() {
 
     try {
       const item = scanResults[index];
-      // Logic check: The UI maps "Depan" -> item.back and "Belakang" -> item.front
-      // But we pass the property name ("back" or "front") directly from the UI loop.
-      // So we just access item[property].
-
-      const currentImg = item[property];
+      const currentImg = item[property]; // Ini adalah string Base64 lama
 
       if (currentImg) {
-        // Rotate 90 degrees
-        const newImg = await rotateImageBase64(currentImg, 90);
+        // 2. Putar gambar pakai Canvas (90 derajat)
+        const rotatedBase64 = await rotateImageBase64(currentImg, 90);
 
+        // 3. Update State dengan Base64 BARU
         setScanResults((prev) => {
           const updated = [...prev];
-          const newItem = { ...updated[index], isRotating: false };
+          const newItem = { ...updated[index] };
 
-          // Update image
           if (property === "front") {
-            newItem.front = newImg;
-            newItem.frontRotation = 0; // Reset rotation since it's burnt in
+            newItem.front = rotatedBase64; // GANTI DENGAN DATA BARU
+            newItem.frontRotation = 0; // Reset CSS rotation karena gambarnya sudah miring secara permanen
           } else {
-            newItem.back = newImg;
+            newItem.back = rotatedBase64; // GANTI DENGAN DATA BARU
             newItem.backRotation = 0;
           }
 
+          newItem.isRotating = false;
           updated[index] = newItem;
           return updated;
         });
       }
     } catch (error) {
       console.error("Rotation failed:", error);
-      setScanResults((prev) => {
-        const updated = [...prev];
-        updated[index] = { ...updated[index], isRotating: false };
-        return updated;
-      });
     }
   };
 
   // --- DRAG AND DROP HANDLERS ---
   const handleDragStart = (index: number, property: "front" | "back") => {
+    if (scanResults[index]?.ocrStatus === "processing") return;
     setDraggedItem({ index, property });
   };
 
@@ -710,6 +820,7 @@ export default function Home() {
 
   const handleDrop = (index: number, targetProperty: "front" | "back") => {
     if (!draggedItem) return;
+    if (scanResults[index]?.ocrStatus === "processing") return;
 
     const sourceIndex = draggedItem.index;
     const sourceProperty = draggedItem.property;
@@ -881,8 +992,8 @@ export default function Home() {
             <div>
               <span
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${pair.selectedApproval.hasil_cek === "sesuai"
-                    ? "bg-green-100 text-green-700 border border-green-200"
-                    : "bg-red-100 text-red-700 border border-red-200"
+                  ? "bg-green-100 text-green-700 border border-green-200"
+                  : "bg-red-100 text-red-700 border border-red-200"
                   }`}
               >
                 {pair.selectedApproval.hasil_cek === "sesuai" ? (
@@ -1064,10 +1175,19 @@ export default function Home() {
         {/* Header */}
         <div className="bg-slate-800 p-6 text-white flex justify-between items-center">
           <div className="flex items-center gap-4">
-            {viewMode === "results" && (
+            {viewMode !== "start" && (
               <button
-                onClick={handleBackToStart}
+                onClick={() => {
+                  if (viewMode === "compare") {
+                    setViewMode("results");
+                    setComparePdfUrl(null);
+                    setCompareIndex(null);
+                  } else {
+                    handleBackToStart();
+                  }
+                }}
                 className="p-2 -ml-2 rounded-full hover:bg-slate-700 transition-colors"
+                title="Kembali"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -1200,10 +1320,10 @@ export default function Home() {
               {status.msg && (
                 <div
                   className={`p-4 rounded-lg text-sm font-medium border ${status.type === "error"
-                      ? "bg-red-50 text-red-700 border-red-200"
-                      : status.type === "success"
-                        ? "bg-green-50 text-green-700 border-green-200"
-                        : "bg-blue-50 text-blue-700 border-blue-200"
+                    ? "bg-red-50 text-red-700 border-red-200"
+                    : status.type === "success"
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : "bg-blue-50 text-blue-700 border-blue-200"
                     }`}
                 >
                   {status.msg}
@@ -1215,8 +1335,8 @@ export default function Home() {
                 onClick={handleScan}
                 disabled={loading}
                 className={`w-full py-4 px-6 rounded-lg font-bold text-white shadow-md transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 ${loading
-                    ? "bg-gray-400 cursor-not-allowed opacity-75"
-                    : "bg-blue-600 hover:bg-blue-700"
+                  ? "bg-gray-400 cursor-not-allowed opacity-75"
+                  : "bg-blue-600 hover:bg-blue-700"
                   }`}
               >
                 {loading ? (
@@ -1379,12 +1499,12 @@ export default function Home() {
                   <div
                     key={index}
                     className={`relative p-6 rounded-2xl border-2 transition-all duration-500 shadow-sm ${pair.isSaved
-                        ? "bg-indigo-50/30 border-indigo-200 dark:bg-indigo-950/10 dark:border-indigo-800 ring-4 ring-indigo-500/10"
-                        : pair.matchStatus === "matched"
-                          ? pair.selectedApproval?.hasil_cek === "sesuai"
-                            ? "bg-green-50/30 border-green-200 dark:bg-green-950/10 dark:border-green-800"
-                            : "bg-red-50/30 border-red-200 dark:bg-red-950/10 dark:border-red-800"
-                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                      ? "bg-indigo-50/30 border-indigo-200 dark:bg-indigo-950/10 dark:border-indigo-800 ring-4 ring-indigo-500/10"
+                      : pair.matchStatus === "matched"
+                        ? pair.selectedApproval?.hasil_cek === "sesuai"
+                          ? "bg-green-50/30 border-green-200 dark:bg-green-950/10 dark:border-green-800"
+                          : "bg-red-50/30 border-red-200 dark:bg-red-950/10 dark:border-red-800"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                       }`}
                   >
                     {/* Badge Sudah Simpan */}
@@ -1473,12 +1593,12 @@ export default function Home() {
                             pair.isSaving
                           }
                           className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black transition-all active:scale-95 shadow-md ${pair.isSaved
-                              ? "bg-green-500 text-white cursor-default"
-                              : pair.isSaving
-                                ? "bg-indigo-400 text-white cursor-wait"
-                                : pair.matchStatus === "matched"
-                                  ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
-                                  : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                            ? "bg-green-500 text-white cursor-default"
+                            : pair.isSaving
+                              ? "bg-indigo-400 text-white cursor-wait"
+                              : pair.matchStatus === "matched"
+                                ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none"
+                                : "bg-slate-300 text-slate-500 cursor-not-allowed"
                             }`}
                         >
                           {pair.isSaving ? (
@@ -1540,11 +1660,11 @@ export default function Home() {
                           <div
                             key={i}
                             className={`group relative transition-all duration-200 ${draggedItem?.index === index &&
-                                draggedItem?.property === img.property
-                                ? "opacity-40 scale-95"
-                                : "opacity-100"
-                              }`}
-                            draggable
+                              draggedItem?.property === img.property
+                              ? "opacity-40 scale-95"
+                              : "opacity-100"
+                              } ${pair.ocrStatus === "processing" ? "cursor-not-allowed opacity-50" : ""}`}
+                            draggable={pair.ocrStatus !== "processing"}
                             onDragStart={() =>
                               handleDragStart(index, img.property)
                             }
@@ -1662,8 +1782,135 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {/* VIEW MODE: COMPARE */}
+          {viewMode === "compare" && compareIndex !== null && scanResults[compareIndex] && (
+            <div className="animate-in fade-in zoom-in duration-300">
+              {/* Header Status Bar */}
+              <div className="flex justify-between items-center mb-6 bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                <div>
+                  <h2 className="text-xl font-bold text-indigo-900 dark:text-indigo-100 flex items-center gap-2">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    Data Terduplikasi! Bandingkan Dokumen
+                  </h2>
+                  <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+                    Bandingkan dokumen hasil scan terbaru (kanan) dengan dokumen yang sudah terdaftar di sistem (kiri).
+                  </p>
+                </div>
+                <div>
+                  <button
+                    onClick={() => {
+                      setViewMode("results");
+                      setComparePdfUrl(null);
+                      setCompareIndex(null);
+                    }}
+                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-md transition-colors flex items-center gap-2 active:scale-95"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                    Kembali ke Hasil
+                  </button>
+                </div>
+              </div>
+
+              {/* Split Screen Container */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                {/* Left Side: PDF Viewer (File dari AWS) */}
+                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border-2 border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black px-3 py-1.5 rounded-lg uppercase tracking-widest">
+                      Dokumen Tersimpan (AWS)
+                    </span>
+                  </div>
+
+                  <div className="flex-1 grid grid-rows-2 gap-4 h-full">
+                    {pdfLoading ? (
+                      <div className="flex items-center justify-center min-h-[400px]">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Render Halaman 1 (Depan) */}
+                        <div className="relative bg-slate-100 dark:bg-slate-950 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-800 min-h-[240px] flex items-center justify-center group shadow-inner">
+                          <span className="absolute top-2 left-2 z-10 bg-black/60 text-white text-[10px] font-black uppercase px-2 py-1 rounded">Depan (Hal 1)</span>
+                          {pdfPageImages[0] ? (
+                            <img src={pdfPageImages[0]} alt="Hal 1" className="w-full h-full object-contain cursor-zoom-in" onClick={() => setPreviewImage(pdfPageImages[0])} />
+                          ) : (
+                            <span className="text-slate-400 text-xs italic">Halaman 1 tidak ditemukan</span>
+                          )}
+                        </div>
+
+                        {/* Render Halaman 2 (Belakang) */}
+                        <div className="relative bg-slate-100 dark:bg-slate-950 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-800 min-h-[240px] flex items-center justify-center group shadow-inner">
+                          <span className="absolute top-2 left-2 z-10 bg-black/60 text-white text-[10px] font-black uppercase px-2 py-1 rounded">Belakang (Hal 2)</span>
+                          {pdfPageImages[1] ? (
+                            <img src={pdfPageImages[1]} alt="Hal 2" className="w-full h-full object-contain cursor-zoom-in" onClick={() => setPreviewImage(pdfPageImages[1])} />
+                          ) : (
+                            <span className="text-slate-400 text-xs italic">Halaman 2 tidak ditemukan</span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Side: Scan Results (Will be saved) */}
+                <div className="bg-indigo-50 dark:bg-indigo-900/10 rounded-2xl p-6 border-2 border-indigo-200 dark:border-indigo-800 shadow-sm flex flex-col h-full">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="bg-indigo-200 dark:bg-indigo-700 text-indigo-800 dark:text-indigo-100 text-xs font-black px-3 py-1.5 rounded-lg uppercase tracking-widest">
+                      Hasil Scan Baru
+                    </span>
+                    <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                      {scanResults[compareIndex].selectedApproval?.npsn} — {scanResults[compareIndex].selectedApproval?.sn_bapp}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 grid grid-rows-2 gap-4 h-full">
+                    {[
+                      { src: scanResults[compareIndex].back, label: 'Depan', rot: scanResults[compareIndex].backRotation || 0 },
+                      { src: scanResults[compareIndex].front, label: 'Belakang', rot: scanResults[compareIndex].frontRotation || 0 }
+                    ].map((img, i) => (
+                      <div key={i} className="relative bg-slate-100 dark:bg-slate-950 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-800 min-h-[240px] flex items-center justify-center group shadow-inner">
+                        <span className="absolute top-2 left-2 z-10 bg-black/60 text-white text-[10px] font-black uppercase px-2 py-1 rounded backdrop-blur-md">
+                          {img.label}
+                        </span>
+
+                        <div className="absolute top-2 right-2 z-10 space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => setPreviewImage(img.src!)}
+                            className="bg-black/60 text-white p-2 rounded-full backdrop-blur-md hover:bg-black/80 transition-colors"
+                            title="Fullscreen Preview"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                            </svg>
+                          </button>
+                        </div>
+
+                        {img.src ? (
+                          <img
+                            src={img.src}
+                            alt={`Preview ${img.label}`}
+                            className="w-full h-full object-contain cursor-zoom-in"
+                            onClick={() => setPreviewImage(img.src!)}
+                            style={{ transform: `rotate(${img.rot}deg)` }}
+                          />
+                        ) : (
+                          <span className="text-slate-400 text-xs">Kosong</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
 
       {/* Image Preview Modal */}
       {previewImage && (
