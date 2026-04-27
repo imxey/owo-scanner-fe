@@ -122,6 +122,10 @@ export default function Home() {
   // Preview Image Modal State
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+  // Update State for Compare view
+  const [updateReason, setUpdateReason] = useState<string>("");
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+
   // Initialize theme
   useEffect(() => {
     // Check local storage or system preference
@@ -406,6 +410,92 @@ export default function Home() {
       });
     }
   };
+
+  const handleUpdate = async () => {
+    if (compareIndex === null) return;
+    if (!updateReason) {
+      Swal.fire({
+        icon: "warning",
+        title: "Alasan Required",
+        text: "Silakan pilih alasan update terlebih dahulu!",
+      });
+      return;
+    }
+
+    const item = scanResults[compareIndex];
+    if (!item.selectedApproval) return;
+
+    setIsUpdating(true);
+
+    try {
+      const processedFront = await rotateImageBase64(
+        item.back || "",
+        item.backRotation || 0,
+      );
+      const processedBack = await rotateImageBase64(
+        item.front || "",
+        item.frontRotation || 0,
+      );
+
+      const payload = {
+        npsn: item.selectedApproval.npsn,
+        sn_bapp: item.selectedApproval.sn_bapp,
+        alasan: updateReason,
+        image_front: processedFront,
+        image_back: processedBack,
+      };
+
+      const res = await fetch(`${import.meta.env.VITE_SAVE_API_URL}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        Swal.fire({
+          icon: "success",
+          title: "Berhasil Diupdate",
+          text: result.message,
+          timer: 2500,
+          showConfirmButton: false,
+        });
+
+        // Set status isSaved to true
+        setScanResults((prev) => {
+          const updated = [...prev];
+          if (updated[compareIndex]) {
+            updated[compareIndex] = { ...updated[compareIndex], isSaved: true };
+          }
+          return updated;
+        });
+
+        setTimeout(() => {
+          setViewMode("results");
+          setComparePdfUrl(null);
+          setCompareIndex(null);
+          setUpdateReason("");
+        }, 1500);
+      } else {
+        Swal.fire({
+          icon: "error",
+          title: "Gagal Update",
+          text: result.message || "Terjadi kesalahan saat mengupdate data",
+        });
+      }
+    } catch (error) {
+      console.error("Update error:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: "Gagal menghubungi server untuk update",
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const handleScan = async () => {
     setLoading(true);
     setStatus({ type: "idle", msg: "⏳ Menghubungkan ke Scanner..." });
@@ -1904,6 +1994,50 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Update Form Section */}
+                  <div className="mt-6 bg-white dark:bg-slate-800 rounded-xl p-4 border border-indigo-100 dark:border-indigo-800/50 shadow-inner">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wide">Tindakan Update (Wajib Alasan)</p>
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <select
+                          value={updateReason}
+                          onChange={(e) => setUpdateReason(e.target.value)}
+                          className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-sm font-medium"
+                        >
+                          <option value="" disabled>Pilih Alasan Update...</option>
+                          <option value="Salah scan">Salah scan</option>
+                          <option value="BAPP Valid baru ditemukan">BAPP Valid baru ditemukan</option>
+                        </select>
+                      </div>
+                      <button
+                        onClick={handleUpdate}
+                        disabled={isUpdating || !updateReason}
+                        className={`w-full py-2.5 rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition-all shadow-md ${isUpdating || !updateReason
+                          ? "bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-500"
+                          : "bg-amber-500 hover:bg-amber-600 text-white active:scale-[0.98]"
+                          }`}
+                      >
+                        {isUpdating ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Memproses Update...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Update Data Ini
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
