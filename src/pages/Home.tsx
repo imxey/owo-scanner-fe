@@ -17,6 +17,7 @@ interface ApprovalData {
   sn_bapp: string;
   nama_sekolah?: string;
   kode?: string;
+  nomor_bapp?: string;
 }
 
 interface ScanPair {
@@ -1068,13 +1069,13 @@ export default function Home() {
               </p>
             </div>
 
-            {/* SN BAPP - Tertiary Info */}
+            {/* Nomor BAPP - Tertiary Info */}
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                SN Dokumen
+                Nomor BAPP
               </p>
               <p className="font-mono text-lg font-bold text-slate-600 dark:text-slate-300">
-                {pair.selectedApproval.sn_bapp}
+                {pair.selectedApproval.nomor_bapp}
               </p>
             </div>
 
@@ -1143,12 +1144,12 @@ export default function Home() {
                     onClick={() => handleSelectApproval(index, choice)}
                     className="w-full text-left p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl hover:border-amber-500 transition-all flex justify-between items-center group"
                   >
-                    <div className="text-xs">
-                      <p className="font-black text-slate-700 dark:text-slate-200">
+                    <div className="text-xs flex-1 min-w-0 pr-4">
+                      <p className="font-black text-slate-700 dark:text-slate-200 truncate">
                         {choice.npsn}
                       </p>
-                      <p className="font-mono text-slate-500 truncate w-32">
-                        {choice.sn_bapp}
+                      <p className="font-mono text-slate-500 truncate">
+                        {choice.nomor_bapp}
                       </p>
                     </div>
                     <div className="bg-amber-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1954,7 +1955,7 @@ export default function Home() {
                       Hasil Scan Baru
                     </span>
                     <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                      {scanResults[compareIndex].selectedApproval?.npsn} — {scanResults[compareIndex].selectedApproval?.sn_bapp}
+                      {scanResults[compareIndex].selectedApproval?.npsn} — {scanResults[compareIndex].selectedApproval?.nomor_bapp}
                     </span>
                   </div>
 
