@@ -7,8 +7,9 @@ interface ScanRecord {
     doc_name: string;
     npsn: string;
     sn_bapp: string;
+    nomor_bapp: string;
     hasil_cek: string;
-    kode: string; // Added field
+    kode: string;
     path: string;
     created_at: string;
 }
@@ -101,7 +102,7 @@ export default function RecordsPage() {
                             <tr>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Date</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">NPSN / Doc Name</th>
-                                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">SN BAPP</th>
+                                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Nomor BAPP</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Kode</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Action</th>
@@ -133,7 +134,7 @@ export default function RecordsPage() {
                                             <div className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">{rec.doc_name}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300 font-mono">
-                                            {rec.sn_bapp}
+                                            {rec.nomor_bapp}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300 font-bold">
                                             {rec.kode || "-"}
