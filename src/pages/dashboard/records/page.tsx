@@ -14,18 +14,23 @@ interface ScanRecord {
     created_at: string;
 }
 
+const PAGE_SIZE = 50;
+
 export default function RecordsPage() {
     const [records, setRecords] = useState<ScanRecord[]>([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState("");
+    const [page, setPage] = useState(0);
 
-    const fetchRecords = async (npsn: string) => {
+    const fetchRecords = async (npsn: string, pageIndex: number) => {
         setLoading(true);
         try {
             const apiUrl = import.meta.env.VITE_SAVE_API_URL;
-            const url = npsn
-                ? `${apiUrl}/records?npsn=${npsn}`
-                : `${apiUrl}/records`;
+            const params = new URLSearchParams();
+            if (npsn) params.set("npsn", npsn);
+            params.set("limit", String(PAGE_SIZE));
+            params.set("start", String(pageIndex * PAGE_SIZE));
+            const url = `${apiUrl}/records?${params.toString()}`;
 
             const res = await fetch(url);
             const json = await res.json();
@@ -39,18 +44,19 @@ export default function RecordsPage() {
         }
     };
 
+    // Reset to first page when search changes
     useEffect(() => {
-        fetchRecords("");
-    }, []);
+        setPage(0);
+    }, [search]);
 
-    // Debounce search
+    // Debounced fetch on search / page change
     useEffect(() => {
         const timer = setTimeout(() => {
-            fetchRecords(search);
+            fetchRecords(search, page);
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [search]);
+    }, [search, page]);
 
     const handleViewPdf = (path: string) => {
         // Path from DB is usually absolute or relative. 
@@ -164,6 +170,33 @@ export default function RecordsPage() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+                    <span className="text-sm text-slate-500 dark:text-slate-400">
+                        Page {page + 1}
+                        {records.length > 0 && (
+                            <span className="text-slate-400 dark:text-slate-500 ml-2">
+                                (rows {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + records.length})
+                            </span>
+                        )}
+                    </span>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setPage((p) => Math.max(0, p - 1))}
+                            disabled={loading || page === 0}
+                            className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            onClick={() => setPage((p) => p + 1)}
+                            disabled={loading || records.length < PAGE_SIZE}
+                            className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
